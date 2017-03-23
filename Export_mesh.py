@@ -73,7 +73,6 @@ def export_mesh(filename, meshobj=None, isDiel=False, showNormals=False, folder=
             fid.write("0 conductor definition file for mesh '" + meshobj.Label)
         fid.write("' created using FreeCAD's ElectroMagnetic workbench\n")
         fid.write("* see http://www.freecad.org and http://www.fastfieldsolvers.com\n")
-        fid.write("\n")
         # export facets
         arrows = []
         condName = meshobj.Label.replace(" ","_")
@@ -217,7 +216,7 @@ def export_faces(filename, isDiel=False, name="", showNormals=False, folder=DEF_
         for obj in sel:
             fid.write("* - " + obj.Label + "\n")
         fid.write("* created using FreeCAD's ElectroMagnetic workbench\n")
-        fid.write("* see http://www.freecad.org and http://www.fastfieldsolvers.com\n\n")
+        fid.write("* see http://www.freecad.org and http://www.fastfieldsolvers.com\n")
 
         arrows = []
         # export faces
