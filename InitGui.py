@@ -436,7 +436,7 @@ def selectorToolbar():
 
         if menu == "Front":
             r4.setChecked(True)
-        elif style == "End":
+        elif menu == "End":
             r5.setChecked(True)
         else:
             r3.setChecked(True)
