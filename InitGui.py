@@ -40,6 +40,10 @@ def selectorToolbar():
     dList = "ArchWorkbench,PartDesignWorkbench"
     p = App.ParamGet("User parameter:BaseApp/SelectorToolbar")
 
+    aMenu = QtGui.QAction(mw)
+    sMenu = QtGui.QMenu()
+    aMenu.setMenu(sMenu)
+
     def onSelector(a):
         """Activate workbench on selection."""
 
@@ -128,29 +132,26 @@ def selectorToolbar():
     def selectorMenu():
         """Selector button with menu."""
 
-        a = QtGui.QAction(mw)
-        menu = QtGui.QMenu()
-        a.setMenu(menu)
+        sMenu.clear()
         active = Gui.activeWorkbench().__class__.__name__
 
         keys = list(actions)
         keys.sort()
 
         for key in keys:
-            menu.addAction(actions[key])
+            sMenu.addAction(actions[key])
             if key == active:
-                menu.setDefaultAction(actions[key])
-                a.setText(actions[key].text())
-                a.setIcon(actions[key].icon())
+                sMenu.setDefaultAction(actions[key])
+                aMenu.setText(actions[key].text())
+                aMenu.setIcon(actions[key].icon())
             else:
                 pass
-
-        return a
 
     def onWorkbenchActivated():
         """Populate the selector toolbar."""
 
         wbActions()
+        selectorMenu()
 
         menu = p.GetString("Menu")
         enabled = p.GetString("Enabled", dList)
@@ -167,10 +168,14 @@ def selectorToolbar():
         if tb:
             tb.clear()
 
+            if menu == "Front" or menu == "End" and active in enabled:
+                enabled.remove(active)
+            else:
+                pass
+
             if menu == "Front":
-                a = selectorMenu()
-                tb.addAction(a)
-                w = tb.widgetForAction(a)
+                tb.addAction(aMenu)
+                w = tb.widgetForAction(aMenu)
                 w.setPopupMode(QtGui.QToolButton
                                .ToolButtonPopupMode
                                .InstantPopup)
@@ -192,9 +197,8 @@ def selectorToolbar():
                         pass
 
             if menu == "End":
-                a = selectorMenu()
-                tb.addAction(a)
-                w = tb.widgetForAction(a)
+                tb.addAction(aMenu)
+                w = tb.widgetForAction(aMenu)
                 w.setPopupMode(QtGui.QToolButton
                                .ToolButtonPopupMode
                                .InstantPopup)
