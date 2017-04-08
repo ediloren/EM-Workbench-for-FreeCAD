@@ -508,6 +508,7 @@ def selectorToolbar():
                 addMenu()
                 mw.workbenchActivated.connect(addMenu)
 
+    onStyle()
     accessoriesMenu()
     onWorkbenchActivated()
 
