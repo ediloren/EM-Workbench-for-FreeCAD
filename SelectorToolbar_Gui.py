@@ -28,13 +28,20 @@ from PySide import QtCore
 actions = {}
 mw = Gui.getMainWindow()
 aMenu = QtGui.QAction(mw)
-aMenu.setObjectName("SelectorToolbarMenu")
+aMenu.setObjectName("SelectorToolbarMenuTb")
 sMenu = QtGui.QMenu()
 aMenu.setMenu(sMenu)
 group = QtGui.QActionGroup(mw)
 dList = "ArchWorkbench,PartDesignWorkbench"
 path = os.path.dirname(__file__) + "/Resources/icons/"
 p = App.ParamGet("User parameter:BaseApp/SelectorToolbar")
+aMenuStatic = QtGui.QAction(mw)
+aMenuStatic.setText("Menu")
+aMenuStatic.setToolTip("Additional workbenches")
+aMenuStatic.setObjectName("SelectorToolbarMenu")
+aMenuStatic.setIcon(QtGui.QIcon(path + "SelectorToolbarMenu.svg"))
+sMenuStatic = QtGui.QMenu()
+aMenuStatic.setMenu(sMenuStatic)
 
 
 def onSelector(a):
@@ -103,7 +110,6 @@ def onStyle():
 def selectorMenu():
     """Selector button with menu."""
     sMenu.clear()
-    static = p.GetBool("Static", 0)
     enabled = p.GetString("Enabled")
     partially = p.GetString("Partially")
     unchecked = p.GetString("Unchecked")
@@ -122,18 +128,11 @@ def selectorMenu():
     for i in s:
         if i not in l and i not in enabled and i not in unchecked:
             l.append(i)
-    if active not in l:
-        l.insert(0, active)
     for i in l:
         sMenu.addAction(actions[i])
-    if static:
-        aMenu.setText("")
-        aMenu.setToolTip("Additional workbenches")
-        aMenu.setIcon(QtGui.QIcon(path + "SelectorToolbarMenu.svg"))
-    else:
-        sMenu.setDefaultAction(actions[active])
-        aMenu.setText(actions[active].text())
-        aMenu.setIcon(actions[active].icon())
+        sMenuStatic.addAction(actions[i])
+    aMenu.setText(actions[active].text())
+    aMenu.setIcon(actions[active].icon())
 
 
 def onWorkbenchActivated():
@@ -155,8 +154,13 @@ def onWorkbenchActivated():
     else:
         pass
     if menu == "Front":
-        tb.addAction(aMenu)
-        w = tb.widgetForAction(aMenu)
+        if static:
+            tb.addAction(aMenuStatic)
+            w = tb.widgetForAction(aMenuStatic)
+            w.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
+        else:
+            tb.addAction(aMenu)
+            w = tb.widgetForAction(aMenu)
         w.setPopupMode(QtGui.QToolButton
                        .ToolButtonPopupMode
                        .InstantPopup)
@@ -171,8 +175,13 @@ def onWorkbenchActivated():
                     a.setChecked(True)
     group.blockSignals(False)
     if menu == "End":
-        tb.addAction(aMenu)
-        w = tb.widgetForAction(aMenu)
+        if static:
+            tb.addAction(aMenuStatic)
+            w = tb.widgetForAction(aMenuStatic)
+            w.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
+        else:
+            tb.addAction(aMenu)
+            w = tb.widgetForAction(aMenu)
         w.setPopupMode(QtGui.QToolButton
                        .ToolButtonPopupMode
                        .InstantPopup)
