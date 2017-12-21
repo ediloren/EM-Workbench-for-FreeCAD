@@ -23,6 +23,19 @@ p = FreeCAD.ParamGet("User parameter:BaseApp/SelectorToolbar")
 
 
 if p.GetBool("Enabled", 1):
+    # Delete duplicate toolbars (can be added by customize dialog).
+    pathTB = "User parameter:BaseApp/Workbench/Global/Toolbar"
+    pTB = FreeCAD.ParamGet(pathTB)
+    n = 1
+    while n and n < 999:
+        group = "Custom_" + str(n)
+        if pTB.HasGroup(group):
+            if pTB.GetGroup(group).GetString("Name") == "Selector":
+                pTB.RemGroup(group)
+            n += 1
+        else:
+            n = None
+
     # Create toolbar.
     pathTB = "User parameter:BaseApp/Workbench/Global/Toolbar/Selector"
     pTB = FreeCAD.ParamGet(pathTB)
