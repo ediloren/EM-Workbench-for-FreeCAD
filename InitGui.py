@@ -27,14 +27,12 @@ if p.GetBool("Enabled", 1):
     pathTB = "User parameter:BaseApp/Workbench/Global/Toolbar"
     pTB = FreeCAD.ParamGet(pathTB)
     n = 1
-    while n and n < 999:
+    while n < 30:
         group = "Custom_" + str(n)
         if pTB.HasGroup(group):
             if pTB.GetGroup(group).GetString("Name") == "Selector":
                 pTB.RemGroup(group)
-            n += 1
-        else:
-            n = None
+        n += 1
 
     # Create toolbar.
     pathTB = "User parameter:BaseApp/Workbench/Global/Toolbar/Selector"
