@@ -39,7 +39,7 @@ DEF_FOLDER = "."
 
 
 def export_mesh(filename, meshobj=None, isDiel=False, showNormals=False, folder=DEF_FOLDER):
-    '''export mesh in FasterCap format as conductor or dielectric interface
+    '''Export mesh in FasterCap format as conductor or dielectric interface
     
     'filename' is the name of the export file
     'meshobj' must be a Mesh::Feature object
