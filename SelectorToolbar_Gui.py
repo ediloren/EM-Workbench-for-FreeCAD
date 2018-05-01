@@ -1,6 +1,6 @@
 # Selector toolbar for FreeCAD
 # Copyright (C) 2015, 2016 (as part of TabBar) triplus @ FreeCAD
-# Copyright (C) 2017 triplus @ FreeCAD
+# Copyright (C) 2017, 2018 triplus @ FreeCAD
 #
 #
 # This library is free software; you can redistribute it and/or
@@ -101,6 +101,8 @@ def onStyle():
     """Manage the toolbutton style."""
     if p.GetString("Style") == "IconText":
         tb.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+    elif p.GetString("Style") == "TextBelow":
+        tb.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
     elif p.GetString("Style") == "Text":
         tb.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
     else:
@@ -210,33 +212,37 @@ def prefDialog():
     g0.setLayout(l0)
     r0 = QtGui.QRadioButton("Icon", g0)
     r0.setObjectName("Icon")
-    r0.setToolTip("Toolbar button icon style")
+    r0.setToolTip("Toolbar buttons with icon")
     r1 = QtGui.QRadioButton("Text", g0)
     r1.setObjectName("Text")
-    r1.setToolTip("Toolbar button text style")
+    r1.setToolTip("Toolbar buttons with text")
     r2 = QtGui.QRadioButton("Icon and text", g0)
     r2.setObjectName("IconText")
-    r2.setToolTip("Toolbar button icon and text style")
+    r2.setToolTip("Toolbar buttons with icon and text")
+    r3 = QtGui.QRadioButton("Text below the icon", g0)
+    r3.setObjectName("TextBelow")
+    r3.setToolTip("Toolbar buttons with icon and text below the icon")
     l0.addWidget(r0)
     l0.addWidget(r1)
     l0.addWidget(r2)
+    l0.addWidget(r3)
     l1 = QtGui.QVBoxLayout()
     g1 = QtGui.QGroupBox("Menu:")
     g1.setLayout(l1)
-    r3 = QtGui.QRadioButton("Disabled", g1)
-    r3.setObjectName("Off")
-    r3.setToolTip("Disable selector menu")
-    r4 = QtGui.QRadioButton("Front", g1)
-    r4.setObjectName("Front")
-    r4.setToolTip("Selector menu at front")
-    r5 = QtGui.QRadioButton("End", g1)
-    r5.setObjectName("End")
-    r5.setToolTip("Selector menu at end")
+    r4 = QtGui.QRadioButton("Disabled", g1)
+    r4.setObjectName("Off")
+    r4.setToolTip("Disable selector menu")
+    r5 = QtGui.QRadioButton("Front", g1)
+    r5.setObjectName("Front")
+    r5.setToolTip("Selector menu at front")
+    r6 = QtGui.QRadioButton("End", g1)
+    r6.setObjectName("End")
+    r6.setToolTip("Selector menu at end")
     c1 = QtGui.QCheckBox("Static")
     c1.setToolTip("Do not adapt selector menu to active workbench")
-    l1.addWidget(r3)
     l1.addWidget(r4)
     l1.addWidget(r5)
+    l1.addWidget(r6)
     l1.addWidget(c1)
     l2 = QtGui.QHBoxLayout()
     l2.addWidget(btnUp)
@@ -383,15 +389,17 @@ def prefDialog():
         r1.setChecked(True)
     elif style == "IconText":
         r2.setChecked(True)
+    elif style == "TextBelow":
+        r3.setChecked(True)
     else:
         r0.setChecked(True)
     menu = p.GetString("Menu", "Front")
     if menu == "Front":
-        r4.setChecked(True)
-    elif menu == "End":
         r5.setChecked(True)
+    elif menu == "End":
+        r6.setChecked(True)
     else:
-        r3.setChecked(True)
+        r4.setChecked(True)
         c1.setEnabled(False)
     static = p.GetBool("Static", 0)
     if static:
@@ -399,9 +407,10 @@ def prefDialog():
     r0.toggled.connect(onG0)
     r1.toggled.connect(onG0)
     r2.toggled.connect(onG0)
-    r3.toggled.connect(onG1)
+    r3.toggled.connect(onG0)
     r4.toggled.connect(onG1)
     r5.toggled.connect(onG1)
+    r6.toggled.connect(onG1)
     c1.stateChanged.connect(onC1)
     btnUp.clicked.connect(onUp)
     btnDown.clicked.connect(onDown)
