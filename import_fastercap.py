@@ -22,7 +22,8 @@
 #***************************************************************************
 
 import FreeCAD, Mesh, Draft, Part, os
-#from FreeCAD import Vector
+from collections import namedtuple
+from FreeCAD import Vector
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -37,7 +38,358 @@ __url__ = "http://www.fastfieldsolvers.com"
 
 DEF_FOLDER = "."
 COLORMAP_LEN = 256
+AUTOREFINE_MAX_PARSE_LEVEL = 32
 
+# filePosMap members
+filePosData = namedtuple('filePosData', ['lineNum', 'filePos'])
+
+# global vars
+#
+m_lDielNum = 0
+m_lCondNum = 0
+m_iParseLevel = -1
+m_iGroupNum = [1]
+m_lGroupDielNum = 0 
+m_bUseMesh = True
+# number of input panels
+m_ulInputPanelNum = 0
+
+
+def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
+    '''Import file in FasterCap format as Mesh or Part.compound
+        
+    'filename' is the name of the export file
+    'folder' is the folder where the file resides
+        
+    Example:
+    fastercapObj = read_fastcap_file('cube.txt')
+'''
+
+    # 
+    # this function is a Python-converted version of the FasterCap C++ 
+    # ReadFastCapFile() import function (and associated functions)
+    #
+
+    global m_lDielNum
+    global m_lCondNum
+    global m_iParseLevel
+    global m_iGroupNum
+    global m_lGroupDielNum
+    global m_sUsePartType
+    global m_ulInputPanelNum
+
+    # init global vars
+    m_lDielNum = 0
+    m_lCondNum = 0
+    m_iParseLevel = -1
+    m_iGroupNum =  [1 for x in range(0,AUTOREFINE_MAX_PARSE_LEVEL)]
+    m_lGroupDielNum = 0
+    m_sUsePartType = usePartType
+    # init number of input panels
+    m_ulInputPanelNum = 0
+
+      
+    if not os.path.isdir(folder):
+        FreeCAD.Console.PrintMessage("Error: '" + folder + "' is not a valid folder\n")
+        return False
+        
+    if not os.path.exists(folder + os.sep + filename):
+        FreeCAD.Console.PrintMessage("Error: '" + filename + "' is not a valid file in the directory " + folder + "\n")
+        return False
+        
+    # understand the type of input file (2D or 3D)
+    fileinname =fol
+    der + os.sep + filename
+    line = ''
+    try:
+        with open(fileinname, 'r') as fid:
+            line = fid.readline()
+            fid.closed
+    except OSError as err:
+        FreeCAD.Console.PrintMessage("OS error: " + format(err) + "\n")
+        return False
+
+    # clear filePosMap dictionary
+    filePosMap = {}
+    if '2d' in line or '2D' in line:
+        # passing dummy 'fid' and 'filePosMap' (that must be empty) since
+        # there is no parent file
+        ret = parse_2D_input_file(fileinname, fid, filePosMap);
+    else:
+        # passing dummy 'fid' and 'filePosMap' (that must be empty) since
+        # there is no parent file
+        ret = parse_3D_input_file(fileinname, fid, filePosMap);
+    
+    return ret
+    
+def parse_2D_input_file(fileinname, fid, filePosMap, use_mesh):
+    
+    FreeCAD.Console.PrintMessage("Parse 2D\n")
+    return True
+    
+    
+def parse_3D_input_file(fileinname, parentFid, parentFilePosMap, isdiel = False, offset = Vector(0.0, 0.0, 0.0), 
+                        outperm = complex(1.0), groupname = '', inperm = complex(1.0), dielrefpoint = Vector(0.0, 0.0, 0.0)):
+    
+    global m_iParseLevel
+    global m_iGroupNum 
+    global m_lGroupDielNum
+    global m_sUsePartType
+    global m_ulInputPanelNum
+    
+    # increment the recursion level counter
+    m_iParseLevel = m_iParseLevel + 1
+    
+    if m_iParseLevel >= AUTOREFINE_MAX_PARSE_LEVEL:
+        FreeCAD.Console.PrintMessage("Warning: maxumum number (" + format(AUTOREFINE_MAX_PARSE_LEVEL) + 
+                                     ") of recursive files exceeded, skipping file " + fileinname + "\n")
+        return True
+        
+    # reset group number for current parse level
+    m_iGroupNum[m_iParseLevel] = 1;
+    
+    # init filePosMap
+    filePosMap = {}
+    
+    # check if the conductor file is a sub-file
+    if fileinname in parentFilePosMap:
+        # if it is a sub-file, copy parent data
+        filePosMap = parentFilePosMap
+        fid = parentFid
+        try:
+            # store current file position to restore it at the end
+            # Remark: tell() in Python under Windows must be used with files opened as 'rb'
+            # as Unix-style endings may cause tell() to return illegal values
+            startPos = fid.tell()
+            # and get linenum and position
+            linenum = parentFilePosMap[fileinname].linenum
+            fid.seek(parentFilePosMap[fileinname].filePos)
+        except IOError as err:
+            FreeCAD.Console.PrintMessage("OS error: " + format(err) + "\n")
+            fid.closed
+            return False
+    else:
+        try:
+            # open the sub file id
+            fid = open(fileinname, 'rb')
+            linenum = 1
+            fid.closed
+        except OSError as err:
+            FreeCAD.Console.PrintMessage("OS error: " + format(err) + "\n")
+            return False
+        
+        # build the file map (for single input file)
+        ret = create_file_map(fileinname, fid, filePosMap)
+        if ret <> True:
+            return ret
+            
+    panelVertexes = []
+    chargeDensity = []
+    panelColors = []
+        
+    for line in fid:
+        # if subfile definitions (starting or ending), stop here
+        if line[0] in ('E', 'e', 'F', 'f'):
+            break
+        # now check for actual statements
+        #
+        # first split the line into the components
+        splitLine = line.split()
+        # if the line was actually composed only by separators, continue
+        if len(splitLine) == 0:
+            continue
+        # if conductor file
+        if splitLine[0] == 'C':
+            try:
+                # read file name
+                name = splitline[1]
+                
+                # read outer permittivity
+                
+                if 'j' in splitline[2]:
+                    # as the complex format in FasterCap is 'a-jb' and not 'a-bj' as the Python 'complex' class
+                    # would like, this trick modifies the string to be parsable by 'complex'
+                    # Remark: we assume that the complex number has no spaces; FasterCap would accept
+                    # also syntax like 'a - jb', here it would cause errors
+                    localOutPerm = complex(splitline[2].replace('j', '') + 'j')
+                else:
+                    localOutPerm = complex(splitline[2])
+                
+                # read offset coordinates
+                localOffset = Vector(float(splitLine[3]), float(splitLine[4]), float(splitLine[5]))
+                localOffset = localOffset + offset
+                
+                # compute group name (to distinguish between panels with the same
+                # conductor name because in the same file called more than once)
+                if m_iParseLevel == 0:
+                    localGroupname = "g"
+                else
+                    localGroupname = groupname
+                localGroupname = localGroupname + str(m_iGroupNum[m_iParseLevel]) + '_'
+                
+                # read optional values
+                if len(splitLine) >= 7:
+                    # read optional '+'. If not a '+', increment the group
+                    if splitLine[6] <> '+':
+                        # increase group name
+                        m_iGroupNum[m_iParseLevel] = m_iGroupNum[m_iParseLevel] + 1
+                    
+                # read optional color; if present, it is the last element of the line
+                if splitLine[-1][0:2] in ("0x", "0X"):
+                    groupcolor = splitLine[5]               
+                
+                # recurse into new conductor file
+                m_iGroupNum[m_iParseLevel+1] = 1
+                
+            except (IndexError, ValueError):
+                FreeCAD.Console.PrintMessage("Error in file " + fileinname + " at line " + format(linenum) + " : " + line + "\n")   
+            
+            ret = Parse3DInputFile(name, fid, filePosMap, False, localOffset, localOutperm, localGroupname)
+            
+            if ret == False:
+                break
+
+        # if dielectric file
+        if splitLine[0] == 'D':
+            try:
+                # read file name
+                name = splitline[1]
+                
+                # read outer permittivity
+                
+                if 'j' in splitline[2]:
+                    # as the complex format in FasterCap is 'a-jb' and not 'a-bj' as the Python 'complex' class
+                    # would like, this trick modifies the string to be parsable by 'complex'
+                    # Remark: we assume that the complex number has no spaces; FasterCap would accept
+                    # also syntax like 'a - jb', here it would cause errors
+                    localOutPerm = complex(splitline[2].replace('j', '') + 'j')
+                else:
+                    localOutPerm = complex(splitline[2])
+                
+                # read inner permittivity
+                
+                if 'j' in splitline[3]:
+                    # as the complex format in FasterCap is 'a-jb' and not 'a-bj' as the Python 'complex' class
+                    # would like, this trick modifies the string to be parsable by 'complex'
+                    # Remark: we assume that the complex number has no spaces; FasterCap would accept
+                    # also syntax like 'a - jb', here it would cause errors
+                    localOutPerm = complex(splitline[3].replace('j', '') + 'j')
+                else:
+                    localOutPerm = complex(splitline[3])
+ 
+                 # read offset coordinates
+                localOffset = Vector(float(splitLine[4]), float(splitLine[5]), float(splitLine[6]))
+                localOffset = localOffset + offset
+                
+                 # read dielectric reference point coordinates
+                localDielrefpoint = Vector(float(splitLine[7]), float(splitLine[8]), float(splitLine[9]))
+                localDielrefpoint = localDielrefpoint + offset
+
+                # read optional values
+                if len(splitLine) >= 11:
+                    # read optional '-'
+                    # if '-', reverse outperm and inperm;
+                    # in this way, the reference point is always on the outperm side
+                    if splitLine[10] == '-':
+                        localInperm, localOutperm = localOutperm, localInperm
+                    
+                # read optional color; if present, it is the last element of the line
+                if splitLine[-1][0:2] in ("0x", "0X"):
+                    groupcolor = splitLine[5]               
+                
+                # compute dielectric name (to distinguish between panels
+                # in the same file called more than once)
+                localGroupname = "diel" + str(m_lGroupDielNum)
+                sprintf(localGroupname, "diel%ld", m_lGroupDielNum)
+                # increase group name
+                m_lGroupDielNum = m_lGroupDielNum + 1
+
+            except (IndexError, ValueError):
+                FreeCAD.Console.PrintMessage("Error in file " + fileinname + " at line " + format(linenum) + " : " + line + "\n")   
+
+            # recurse into new dielectric file
+            ret = Parse3DInputFile(name, fid, filePosMap, True, localOffset, localOutperm, localGroupname, localInperm, localDielrefpoint)
+            
+            if ret == False:
+                break
+
+        # if triangle
+        if splitLine[0] == 'T':
+            try:
+                # read conductor name to which the patch belongs
+                tmpname = splitline[1]
+                
+                # read panel coordinates
+                #
+                
+                # if using mesh, we need a flat list of vertexes, that will be used in triplets
+                # to build the triangular-only mesh faces
+                if m_sUsePartType == 'mesh':
+                    panelVertexes.extend( [ [float(splitLine[2]), float(splitLine[3]), float(splitLine[4])],
+                                            [float(splitLine[5]), float(splitLine[6]), float(splitLine[7])],
+                                            [float(splitLine[8]), float(splitLine[9]), float(splitLine[10])] ])
+                # if using faces, we need FreeCAD.Vector or tuple of three floats for each vertex, in a vector
+                # with as many elements as the vertexes of the polygon supporting the face
+                else:
+                    panelVertexes.append( [ (float(splitLine[2]), float(splitLine[3]), float(splitLine[4])),
+                                            (float(splitLine[5]), float(splitLine[6]), float(splitLine[7])),
+                                            (float(splitLine[8]), float(splitLine[9]), float(splitLine[10])) ])
+                                            
+                # read optional reference point
+                if len(splitLine) >= 14:
+                    localDielrefpoint = Vector(float(splitLine[11]), float(splitLine[12]), float(splitLine[13]))
+                    localDielrefpoint = localDielrefpoint + offset
+                    uselocaldiel = True
+                else
+                    uselocaldiel = False
+
+                # read optional trailing charge density information, or color
+                # Note that charge density is alternative to color (cannot have both), but charge density could 
+                # be confused with the last coordinate of the optional reference point. So if there are three
+                # additional optional float values, this is the reference point, and if there is something else still,
+                # this must be charge density or color; if there are not three additional optional float values, 
+                # but there is something else, again this must be charge density or color, so look at the last value
+                # on the line
+                if (uselocaldiel == True and len(splitLine) >= 15) or (uselocaldiel == false and len(splitline) >= 12):
+                    # if color, read it
+                    if splitLine[-1][0:2] in ("0x", "0X"):
+                        panelColors.append(splitLine[-1])
+                    else
+                        chargeDensity.append(float(splitLine[11]))
+
+            except (IndexError, ValueError):
+                FreeCAD.Console.PrintMessage("Error on line " + format(i) + " : " + line + "\n")
+                
+            name = groupname
+            # if this is a conductor panel, compose the actual name; otherwise, for dielectric interfaces,
+            # we can ignore specific conductor names
+            if isdiel == False:
+                # concat name with group name
+                name = name + tmpname
+            
+            ret = GetConductor(&(itc), &dielIndex, name, isdiel, outpermRe, outpermIm, inpermRe, inpermIm, dielrefpoint)
+            if(ret == False)
+                break
+            # ret = (long)CreatePanel(vertex, tmpname, dielIndex, &itc, fileinname, linenum, AUTOREFINE_SIMPLE_CREATE_PANEL, globalVars, uselocaldiel, localDielrefpoint);
+           
+            
+
+            # counting panels (i.e. the panel # in the input file, no input refinement,
+            # e.g. Q panels split in two triangles)
+            if isdiel == False:
+                m_ulInputPanelNum = m_ulInputPanelNum + 1
+            else:
+                m_ulInputPanelNum = m_ulInputPanelNum + 1
+                                            
+
+
+
+                            
+    return True
+    
+def create_file_map(fileinname, fid, filePosMap)
+    return False
+    
 def import_fastercap(filename, folder=DEF_FOLDER, use_mesh=True):
     '''Import file in FasterCap format as Mesh or Part.compound
         
@@ -47,10 +399,6 @@ def import_fastercap(filename, folder=DEF_FOLDER, use_mesh=True):
     Example:
     fastercapObj = import_fastercap('cube.txt')
 '''
-     
-    # 
-    # this importer is a Python converted version of the FasterCap C++ import function
-    #
     
     if not os.path.isdir(folder):
         FreeCAD.Console.PrintMessage("Error: '" + folder + "' is not a valid folder\n")
@@ -61,12 +409,12 @@ def import_fastercap(filename, folder=DEF_FOLDER, use_mesh=True):
         return
         
     try:
-        with open(folder + os.sep + filename, 'r') as fid:
+        with open(folder + os.sep + filename, 'rb') as fid:
             # reset the list of triangle vertexes
             panelVertexes = []
             chargeDensity = []
             # and scan all the file
-            for i, line in enumerate(fid.readlines()):
+            for i, line in enumerate(fid):
                 # if first line, or empty line, skip
                 if i == 0 or line in ['', '\n', '\r\n']:
                     continue

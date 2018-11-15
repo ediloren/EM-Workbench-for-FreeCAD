@@ -1,6 +1,6 @@
 #***************************************************************************
 #*                                                                         *
-#*   Copyright (c) 2014                                                    *  
+#*   Copyright (c) 2018                                                    *  
 #*   FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com              *  
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
@@ -124,7 +124,7 @@ def export_mesh(filename, meshobj=None, isDiel=False, showNormals=False, folder=
     fid.closed
 
 def make_arrow(startpoint, endpoint):
-    '''create an arrow
+    '''Create an arrow
     
     'startpoint' is a Vector specifying the start position
     'endpoint' is a Vector specifying the end position
@@ -146,8 +146,8 @@ def make_arrow(startpoint, endpoint):
     
     return arrow
     
-def export_faces(filename, isDiel=False, name="", showNormals=False, folder=DEF_FOLDER):
-    '''export faces in FasterCap format as conductor or dielectric interface
+def export_faces(filename, isDiel=False, name="", showNormals=False, forceMesh=False, folder=DEF_FOLDER):
+    '''Export faces in FasterCap format as conductor or dielectric interface
     
     The function operates on the selection. The selection can be a face, a compound or a solid.
     'filename' is the name of the export file
@@ -164,7 +164,7 @@ def export_faces(filename, isDiel=False, name="", showNormals=False, folder=DEF_
 '''
     # get selection
     sel = FreeCADGui.Selection.getSelection()
-    # if no valid mesh was passed
+    # if no valid selection was passed
     if sel == None:
         return
     
@@ -186,8 +186,12 @@ def export_faces(filename, isDiel=False, name="", showNormals=False, folder=DEF_
                 faces.extend(obj.Shape.Faces)
     # scan faces and find out which faces have more than 4 vertexes
     # TBD warning: should mesh also curve faces
-    facesComplex = [x for x in faces if len(x.Vertexes) >= 5]
-    facesSimple = [x for x in faces if len(x.Vertexes) < 5]
+    if forceMesh == False:
+      facesComplex = [x for x in faces if len(x.Vertexes) >= 5]
+      facesSimple = [x for x in faces if len(x.Vertexes) < 5]
+    else:
+      facesComplex = faces
+      facesSimple = []
     # mesh complex faces
     doc = FreeCAD.ActiveDocument
     for face in facesComplex:
@@ -197,7 +201,7 @@ def export_faces(filename, isDiel=False, name="", showNormals=False, folder=DEF_
     # now we have faces and facets. Uniform all
     panels = []
     for face in facesSimple:
-        sortEdges = DraftGeomUtils.sortEdges(face.Edges)
+        sortEdges = Part.__sortEdges__(face.Edges)
         # Point of a Vertex is a Vector, as well as Face.normalAt()
         points = [x.Vertexes[0].Point for x in sortEdges]
         panels.append( [points, face.normalAt(0,0)] )
@@ -269,4 +273,3 @@ def export_faces(filename, isDiel=False, name="", showNormals=False, folder=DEF_
         normalobj.Shape = normals
 
     
-
