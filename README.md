@@ -17,7 +17,9 @@ At present, the workbench supports:
 
 The ElectroMagnetic workbench is managed as a FreeCAD addon. This addon can be downloaded by clicking the **Download ZIP** button found on top of the page, or using **Git**. The addon must be placed in your user's FreeCAD/Mod folder. 
 
-**Note**: Your user's FreeCAD folder location is obtained by typing in FreeCAD's python console: `FreeCAD.ConfigGet("UserAppData")`
+**Note**: Your user's FreeCAD folder location is obtained by typing in FreeCAD's python console: `FreeCAD.ConfigGet("UserAppData")`.
+
+You must then rename the new folder 'EM'. I.e., the new folder structure must be <UserAppData>/Mod/EM. Opening, or closing/reopening FreeCAD then reloads the workbenches, and the E.M. workbench will show up in the pull-down workbenches menu in FreeCAD.
 
 ## Additional information
 
