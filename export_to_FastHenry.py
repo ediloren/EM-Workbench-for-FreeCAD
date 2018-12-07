@@ -1,7 +1,10 @@
 #***************************************************************************
 #*                                                                         *
-#*   Copyright (c) 2018                                                    *  
-#*   FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com              *  
+#*   Copyright (c) 2018                                                    *
+#*   Efficient Power Conversion Corporation, Inc.  http://epc-co.com       *
+#*                                                                         *
+#*   Developed by FastFieldSolvers S.R.L. under contract by EPC            *
+#*   http://www.fastfieldsolvers.com                                       *
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
 #*   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -20,6 +23,7 @@
 #*   USA                                                                   *
 #*                                                                         *
 #***************************************************************************
+
 
 import FreeCAD, Mesh, Part, MeshPart, DraftGeomUtils, os
 from FreeCAD import Vector

@@ -1,7 +1,10 @@
 #***************************************************************************
 #*                                                                         *
-#*   Copyright (c) 2018                                                    *  
-#*   FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com              *  
+#*   Copyright (c) 2018                                                    *
+#*   Efficient Power Conversion Corporation, Inc.  http://epc-co.com       *
+#*                                                                         *
+#*   Developed by FastFieldSolvers S.R.L. under contract by EPC            *
+#*   http://www.fastfieldsolvers.com                                       *
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
 #*   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -20,6 +23,7 @@
 #*   USA                                                                   *
 #*                                                                         *
 #***************************************************************************
+
 
 __title__="FreeCAD E.M. Workbench FastHenry Solver Class"
 __author__ = "FastFieldSolvers S.R.L."
@@ -154,7 +158,9 @@ class _FHSolver:
     '''
         #FreeCAD.Console.PrintWarning("\n_FHSolver onChanged(" + str(prop)+")\n") #debug
         if not hasattr(self,"Object"):
-            # on restore, self.Object is not there anymore
+            # on restore, self.Object is not there anymore (JSON does not serialize complex objects
+            # members of the class, so __getstate__() and __setstate__() skip them);
+            # so we must "re-attach" (re-create) the 'self.Object'
             self.Object = obj
             
     def serialize(self,fid,headOrTail):
@@ -162,7 +168,7 @@ class _FHSolver:
     '''
         if headOrTail == "head":
             fid.write("* FastHenry input file created using FreeCAD's ElectroMagnetic Workbench\n")
-            fid.write("* See http://www.freecad.org and http://www.fastfieldsolvers.com\n")
+            fid.write("* See http://www.freecad.org, http://www.fastfieldsolvers.com and http://epc-co.com\n")
             fid.write("\n")
             fid.write(".units " + self.Object.Units + "\n")
             fid.write("\n")
@@ -173,7 +179,14 @@ class _FHSolver:
             fid.write(".freq fmin=" + str(self.Object.fmin) + " fmax=" + str(self.Object.fmax) + " ndec=" + str(self.Object.ndec) + "\n")
             fid.write("\n")
             fid.write(".end\n")
-           
+
+    def __getstate__(self):
+        return self.Type
+
+    def __setstate__(self,state):
+        if state:
+            self.Type = state
+            
 class _ViewProviderFHSolver:
     def __init__(self, obj):
         ''' Set this object to the proxy object of the actual view provider '''
@@ -182,6 +195,10 @@ class _ViewProviderFHSolver:
 
     def attach(self, obj):
         ''' Setup the scene sub-graph of the view provider, this method is mandatory '''
+        # on restore, self.Object is not there anymore (JSON does not serialize complex objects
+        # members of the class, so __getstate__() and __setstate__() skip them);
+        # so we must "re-attach" (re-create) the 'self.Object'
+        self.Object = obj.Object
         return
 
     def updateData(self, fp, prop):
@@ -204,6 +221,12 @@ class _ViewProviderFHSolver:
         '''
         return os.path.join(iconPath, 'solver_icon.svg')
 
+    def __getstate__(self):
+        return None
+
+    def __setstate__(self,state):
+        return None
+        
 class _CommandFHSolver:
     ''' The EM FastHenry Solver command definition
 '''

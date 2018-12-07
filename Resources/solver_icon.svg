@@ -14,8 +14,8 @@
    height="64px"
    id="svg2860"
    sodipodi:version="0.32"
-   inkscape:version="0.48.4 r9939"
-   sodipodi:docname="fem-analysis.svg"
+   inkscape:version="0.91 r13725"
+   sodipodi:docname="solver_icon.svg"
    inkscape:output_extension="org.inkscape.output.svg.inkscape"
    version="1.1">
   <defs
@@ -79,16 +79,16 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="5.5"
-     inkscape:cx="1.1818182"
+     inkscape:cx="-25.636364"
      inkscape:cy="29.272727"
      inkscape:current-layer="layer1"
      showgrid="true"
      inkscape:document-units="px"
      inkscape:grid-bbox="true"
-     inkscape:window-width="1280"
+     inkscape:window-width="1476"
      inkscape:window-height="750"
-     inkscape:window-x="1349"
-     inkscape:window-y="189"
+     inkscape:window-x="164"
+     inkscape:window-y="71"
      inkscape:window-maximized="0" />
   <metadata
      id="metadata2865">
@@ -108,14 +108,14 @@
      inkscape:groupmode="layer">
     <text
        xml:space="preserve"
-       style="font-size:64px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;line-height:125%;letter-spacing:0px;word-spacing:0px;fill:#ffff00;fill-opacity:1;stroke:#241c1c;font-family:DejaVu Serif;-inkscape-font-specification:DejaVu Serif;stroke-width:2;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:4.09999999999999960"
-       x="10.909091"
-       y="54.909092"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:64px;line-height:125%;font-family:'DejaVu Serif';-inkscape-font-specification:'DejaVu Serif';letter-spacing:0px;word-spacing:0px;fill:#ffff00;fill-opacity:1;stroke:#241c1c;stroke-width:2;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:4.0999999"
+       x="9.272727"
+       y="54"
        id="text3014"
        sodipodi:linespacing="125%"><tspan
          sodipodi:role="line"
          id="tspan3016"
-         x="10.909091"
-         y="54.909092">A</tspan></text>
+         x="9.272727"
+         y="54">S</tspan></text>
   </g>
 </svg>

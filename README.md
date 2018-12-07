@@ -1,11 +1,24 @@
 # ElectroMagnetic workbench for FreeCAD
+
+## Copyright
+
+### FastHenry support
+
+Copyright (c) 2018
+Efficient Power Conversion Corporation, Inc.  http://epc-co.com
+
+Developed by FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com under contract by EPC
+
+
+### FasterCap and FastCap support
+
 Copyright (c) 2018
 FastFieldSolvers S.R.L. http://www.fastfieldsolvers.com
 
 ## Description
 
 This project is dedicated to building an ElectroMagnetic workbench for [FreeCAD](https://www.freecadweb.org). FreeCAD is a free 3D parametric CAD.
-FreeCAD is used as pre-processor interfacing to the electromagnetic field solvers.
+FreeCAD is used as pre-processor interfacing to the open source electromagnetic field solvers [FastHenry](https://www.fastfieldsolvers.com/fasthenry2.htm) and [FasterCap](https://www.fastfieldsolvers.com/fastercap.htm).
 
 At present, the workbench supports:
 

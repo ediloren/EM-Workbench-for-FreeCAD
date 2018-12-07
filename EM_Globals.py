@@ -1,7 +1,10 @@
 #***************************************************************************
 #*                                                                         *
 #*   Copyright (c) 2018                                                    *
-#*   FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com              *
+#*   Efficient Power Conversion Corporation, Inc.  http://epc-co.com       *
+#*                                                                         *
+#*   Developed by FastFieldSolvers S.R.L. under contract by EPC            *
+#*   http://www.fastfieldsolvers.com                                       *
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
 #*   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -22,22 +25,12 @@
 #***************************************************************************
 
 
-import subprocess
-from time import sleep
-import FreeCAD, FreeCADGui
- 
-simfile = "C:/Users/Public/Documents/FastFieldSolvers/FasterCap/3D/array_of_5_spheres.lst"
-simengine = 'C:/Program Files (x86)/FastFieldSolvers/FasterCap/fastercap.exe'
+__title__="FreeCAD E.M. Workbench global definitions"
+__author__ = "FastFieldSolvers S.R.L."
+__url__ = "http://www.fastfieldsolvers.com"
 
-p=subprocess.Popen([simengine, "-b", "-a0.001", "-ap", simfile],stdin=subprocess.PIPE,stdout=subprocess.PIPE)
- 
-while True:
-  myline = p.stdout.readline()
-  if myline:
-    App.Console.PrintMessage(myline)
-  if not myline:
-    break
-  
-lastout = p.communicate()
-App.Console.PrintMessage(lastout)
+
+# defines
+#
+#EM_DEF_XXX = 1.0
 

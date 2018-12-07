@@ -1,7 +1,10 @@
 #***************************************************************************
 #*                                                                         *
-#*   Copyright (c) 2018                                                    *  
-#*   FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com              *  
+#*   Copyright (c) 2018                                                    *
+#*   Efficient Power Conversion Corporation, Inc.  http://epc-co.com       *
+#*                                                                         *
+#*   Developed by FastFieldSolvers S.R.L. under contract by EPC            *
+#*   http://www.fastfieldsolvers.com                                       *
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
 #*   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -21,6 +24,7 @@
 #*                                                                         *
 #***************************************************************************
 
+
 __title__="FreeCAD E.M. Workbench GUI"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
@@ -35,21 +39,33 @@ class EMWorkbench(Workbench):
     def Initialize(self):
         import DraftTools,DraftGui
         from DraftTools import translate
-        
         # import the EM module (and therefore all commands makeXXX)
         import EM
-
         # E.M. tools
-        self.emtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPort", "EM_FHInputFile"]
-                     
+        self.emtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPlane",
+                "EM_FHPlaneHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile"]
+        # draft tools
+        self.draftmodtools = ["Draft_Move","Draft_Rotate","Draft_Offset",
+                "Draft_Trimex", "Draft_Upgrade", "Draft_Downgrade", "Draft_Scale",
+                "Draft_Shape2DView","Draft_Draft2Sketch","Draft_Array",
+                "Draft_Clone"]
+        self.treecmdList = ["Draft_SelectPlane", "Draft_ShowSnapBar","Draft_ToggleGrid"]
+        self.snapList = ['Draft_Snap_Lock','Draft_Snap_Midpoint','Draft_Snap_Perpendicular',
+                         'Draft_Snap_Grid','Draft_Snap_Intersection','Draft_Snap_Parallel',
+                         'Draft_Snap_Endpoint','Draft_Snap_Angle','Draft_Snap_Center',
+                         'Draft_Snap_Extension','Draft_Snap_Near','Draft_Snap_Ortho','Draft_Snap_Special',
+                         'Draft_Snap_Dimensions','Draft_Snap_WorkingPlane']
+
         def QT_TRANSLATE_NOOP(scope, text): return text
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. tools"),self.emtools)
+        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft mod tools"),self.draftmodtools)
         self.appendMenu(QT_TRANSLATE_NOOP("EM","&EM"),self.emtools)
+        self.appendMenu(QT_TRANSLATE_NOOP("EM","&Draft"),self.draftmodtools+self.treecmdList)
+        self.appendMenu([QT_TRANSLATE_NOOP("EM","&Draft"),QT_TRANSLATE_NOOP("arch","Snapping")],self.snapList)
         #FreeCADGui.addIconPath(":/icons")
         #FreeCADGui.addLanguagePath(":/translations")
         #FreeCADGui.addPreferencePage(":/ui/preferences-EM.ui","EM")
         #FreeCADGui.addPreferencePage(":/ui/preferences-aEMdefaults.ui","EM")
-
         Log ('Loading EM module... done\n')
 
     def Activated(self):

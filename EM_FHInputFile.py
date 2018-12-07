@@ -1,7 +1,10 @@
 #***************************************************************************
 #*                                                                         *
-#*   Copyright (c) 2018                                                    *  
-#*   FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com              *  
+#*   Copyright (c) 2018                                                    *
+#*   Efficient Power Conversion Corporation, Inc.  http://epc-co.com       *
+#*                                                                         *
+#*   Developed by FastFieldSolvers S.R.L. under contract by EPC            *
+#*   http://www.fastfieldsolvers.com                                       *
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
 #*   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -21,13 +24,10 @@
 #*                                                                         *
 #***************************************************************************
 
+
 __title__="FreeCAD E.M. Workbench FastHenry create input file command"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
-
-# defines
-#
-EMFHINPUTFILE_DEF_FILENAME = "fasthenry_input_file.inp"
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
 import EM
@@ -103,22 +103,35 @@ def makeFHInputFile(doc=None,filename=None,folder=None):
         nodes = [obj for obj in doc.Objects if Draft.getType(obj) == "FHNode"]
         for node in nodes:
             node.Proxy.serialize(fid)
+        fid.write("\n")
         # then the segments
-        fid.write("\n")
-        fid.write("* Segments\n")
         segments = [obj for obj in doc.Objects if Draft.getType(obj) == "FHSegment"]
-        for segment in segments:
-            segment.Proxy.serialize(fid)
+        if segments:
+            fid.write("* Segments\n")
+            for segment in segments:
+                segment.Proxy.serialize(fid)
+            fid.write("\n")
+        # then the planes
+        planes = [obj for obj in doc.Objects if Draft.getType(obj) == "FHPlane"]
+        if planes:
+            fid.write("* Planes\n")
+            for plane in planes:
+                plane.Proxy.serialize(fid)
+            fid.write("\n")
         # then the .equiv
-        # TBC
+        equivs = [obj for obj in doc.Objects if Draft.getType(obj) == "FHEquiv"]
+        if equivs:
+            fid.write("* Node shorts\n")
+            for equiv in equivs:
+                equiv.Proxy.serialize(fid)
+            fid.write("\n")
         # then the ports
-        fid.write("\n")
         fid.write("* Ports\n")
         ports = [obj for obj in doc.Objects if Draft.getType(obj) == "FHPort"]
         for port in ports:
             port.Proxy.serialize(fid)
-        # and finally the tail
         fid.write("\n")
+        # and finally the tail
         solver.Proxy.serialize(fid,"tail")
     FreeCAD.Console.PrintMessage(QT_TRANSLATE_NOOP("EM","Finished exporting")+"\n")
 
