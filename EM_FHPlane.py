@@ -45,7 +45,7 @@ EMFHNODE_DEF_NODENAMEEXT = "p"
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
 import numpy as np
 from math import sqrt
-import EM
+from EM_Globals import EMFHNODE_DEF_NODECOLOR
 from FreeCAD import Vector
 
 if FreeCAD.GuiUp:
@@ -65,15 +65,28 @@ __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHPlane(baseobj=None,thickness=None,seg1=None,seg2=None,nodes=[],holes=[],name='FHPlane'):
-    '''Creates a FastHenry uniform Plane ('G' statement in FastHenry)
+    ''' Creates a FastHenry uniform Plane ('G' statement in FastHenry)
     
-    'baseobj' is the object on which the node is based.
-        This can be a Part::Box or a Draft::Rectangle.
-        If no 'baseobj' is given, the user must assign a base
-        object later on, to be able to use this object.
+        'baseobj' is the object on which the node is based.
+            This can be a Part::Box or a Draft::Rectangle.
+            If no 'baseobj' is given, the user must assign a base
+            object later on, to be able to use this object.
+        'thickness' is a float defining the plane thickness. If not defines,
+            it defaults to EMFHPLANE_DEF_THICKNESS
+        'seg1' is an integer defining the number of segments 
+            along the x dimension of the plane
+            ('seg1' parameter in FastHenry)
+        'seg2' is an integer defining the number of segments
+            along the y dimension of the plane
+            ('seg2' parameter in FastHenry)
+        'nodes' is an array of FHNode objects, specifying the nodes that
+            will be adopted by the plane
+        'holes' is an array of FHPlaneHole objects, specifying the holes that
+            will be adopted by the plane
+        'name' is the name of the object
     
     Example:
-    TBD
+        plane = makeFHPlane(myDraftRect,thickness=1.0,seg1=15,seg2=15,[App.ActiveDocument.Node001])
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
@@ -152,9 +165,11 @@ class _FHPlane:
         obj.addProperty("App::PropertyLinkList","Nodes","EM",QT_TRANSLATE_NOOP("App::Property","Nodes for connections to the plane"))
         obj.addProperty("App::PropertyLinkList","Holes","EM",QT_TRANSLATE_NOOP("App::Property","Holes in the plane"))
         obj.addProperty("App::PropertyBool","FineMesh","Component",QT_TRANSLATE_NOOP("App::Property","Specifies if this the plane fine mesh is shown (i.e. composing segments)"))
+        obj.addProperty("App::PropertyBool","ShowNodes","Component",QT_TRANSLATE_NOOP("App::Property","Show the internal node grid supporting the plane"))
         obj.Proxy = self
         self.Type = "FHPlane"
         self.FineMesh = False
+        self.ShowNodes = True
         # save the object in the class, to store or retrieve specific data from it
         # from within the class
         self.Object = obj
@@ -267,7 +282,19 @@ class _FHPlane:
         # relative to the plane coordinate system 
         abs_pos = node.Proxy.getAbsCoord()
         node.Proxy.setAbsCoord(abs_pos,self.Object.Base.Placement)
+        # set the Z relative coordinate to zero (node will be on the plane)
+        node.Z = 0.0
+        # and change its color to mark that this is a plane node
         node.ViewObject.PointColor = EMFHNODE_DEF_PLANENODECOLOR
+
+    def removeNode(self,node):
+        ''' Remove a node from the FHPlane
+
+            'node': FHNode object
+            
+            The color of the node will be reverted to the default node color
+    '''
+        node.ViewObject.PointColor = EMFHNODE_DEF_NODECOLOR
 
     def adoptHole(self,hole):
         ''' Adopt a hole in the FHPlane
@@ -280,24 +307,33 @@ class _FHPlane:
         # relative to the plane coordinate system 
         abs_pos = hole.Proxy.getAbsCoord()
         hole.Proxy.setAbsCoord(abs_pos,self.Object.Base.Placement)
+        # set the Z relative coordinate to zero (node will be on the plane)
+        hole.Z = 0.0
+
+    def removeHole(self,hole):
+        ''' Remove a hole from the FHPlane
+
+            'hole': FHPlaneHole object
+    '''
+        return
             
     def makeFinePlane(self,obj,length,width,thickness,segwid1,segwid2):
         ''' Compute a fine mesh plane shape given:
             
-            TBD
-            TBD
-
-            'n1': start node position (Vector)
-            'n2': end node position (Vector)
-            'width': segment width
-            'height': segment height
-            'ww': cross-section direction (along width)
+            'obj' the FHPlane object
+            'length' the length of the plane (along the x dimension)
+            'width' the width of the plane (along the y dimension)
+            'thickness' the thickness of the plane (along the z dimension)
+            'segwid1' the width of the segments along the x dimension
+            'segwid2' the width of the segments along the y dimension
+            
+            The function returns a Shape object defining the plane.
             
             The plane is assumed to lie in the standard default position (default Placement)
             (with the Placement.Base in the origin, no rotation, and length along x, width along y, thickness along z)
             Its placement will be moved and rotated by the caller.
     '''
-        segments=[]
+        shapes=[]
         # prepare the array of the internal nodes of the plane. 'True' means that the node 
         # exists, i.e. has not been removed due to holes in the plane.
         # The number of nodes is equal to the number of segments along the edge plus one;
@@ -307,13 +343,11 @@ class _FHPlane:
         seg1len=length/obj.seg1
         seg2len=width/obj.seg2
         #
-        # debug
-        for seg1 in range(obj.seg1+1):
-            for seg2 in range(obj.seg2+1):
-                shape = Part.Vertex(Vector(seg1len*seg1,seg2len*seg2,-0.1))
-                segments.append(shape)
-        # end debug
-        #
+        if obj.ShowNodes == True:
+            for seg1 in range(obj.seg1+1):
+                for seg2 in range(obj.seg2+1):
+                    shape = Part.Vertex(Vector(seg1len*seg1,seg2len*seg2,-0.1))
+                    shapes.append(shape)
         # now process the holes
         for hole in obj.Holes:
             if hole.Type == 'Point':
@@ -369,7 +403,7 @@ class _FHPlane:
                 if nodes[seg1][seg2] and nodes[seg1+1][seg2]:
                     # makeBox(length, width, height, point, direction)
                     boxshape = Part.makeBox(seg1len,segwid1,thickness,Vector(seg1len*seg1,-segwid1/2+seg2len*seg2,0))
-                    segments.append(boxshape)
+                    shapes.append(boxshape)
         # layout segments along plane width
         for seg1 in range(obj.seg1+1):
             for seg2 in range(obj.seg2):
@@ -377,16 +411,19 @@ class _FHPlane:
                 if nodes[seg1][seg2] and nodes[seg1][seg2+1]:
                     # makeBox(length, width, height, point, direction)
                     boxshape = Part.makeBox(segwid2,seg2len,thickness,Vector(-segwid2/2+seg1len*seg1,seg2len*seg2,0))
-                    segments.append(boxshape)
-        shape = Part.makeCompound(segments)
+                    shapes.append(boxshape)
+        shape = Part.makeCompound(shapes)
         return shape
  
     def findNearestNode(self,x_coord,y_coord,obj,seg1len,seg2len):
-        ''' find the plane node nearest to the given point (in local plane coordinates)
+        ''' Find the plane node nearest to the given point (in local plane coordinates)
         
-        'x_coord' and 'y_coord' are the point coordinates, of type Base.Quantity
-        'obj' is the FHPlane object
-        'seg1len' and 'seg2len' are the lengths of the segments along the lenght and width, respectively
+            'x_coord' and 'y_coord' are the point coordinates, of type Base.Quantity
+            'obj' is the FHPlane object
+            'seg1len' and 'seg2len' are the lengths of the segments along the lenght and width, respectively
+
+            The function returns a tuple containing two integers corresponding to the node
+            position within the plane array of internal nodes.
     '''
         # as we cast to int, + 0.5 is used to approximate to the next larger int
         # if greater than x.5 and to the previous smaller int otherwise
@@ -403,6 +440,14 @@ class _FHPlane:
             nodeY = obj.seg2
         return (nodeX,nodeY)
             
+    def onBeforeChange(self, obj, prop):
+        ''' take action before the 'obj' object 'prop' will change
+    '''
+        # save current list of nodes and holes, before the change,
+        # to be able to see which nodes/holes have been added or removed
+        self.Nodes = obj.Nodes
+        self.Holes = obj.Holes
+        
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
     '''
@@ -413,11 +458,27 @@ class _FHPlane:
             # so we must "re-attach" (re-create) the 'self.Object'
             self.Object = obj
         if prop == "Nodes":
+            # check for new nodes
             for node in obj.Nodes:
-                self.adoptNode(node)
+                # if the node has been just added to the plane, adopt it
+                if not node in self.Nodes:
+                    self.adoptNode(node)
+            # check for removed nodes
+            for node in self.Nodes:
+                # if the node is not present any more in the plane, remove it
+                if not node in obj.Nodes:
+                    self.removeNode(node)
         if prop == "Holes":
+            # check for new holes
             for hole in obj.Holes:
-                self.adoptHole(hole)
+                # if the hole has been just added to the plane, adopt it
+                if not hole in self.Holes:
+                    self.adoptHole(hole)
+            # check for removed holes
+            for hole in self.Holes:
+                # if the hole is not present any more in the plane, remove it
+                if not hole in obj.Holes:
+                    self.removeHole(hole)
 
     def serialize(self,fid):
         ''' Serialize the object to the 'fid' file descriptor
@@ -508,9 +569,8 @@ class _ViewProviderFHPlane:
         return
 
     def updateData(self, fp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n")
         ''' If a property of the handled feature has changed we have the chance to handle this here '''
+        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n") # debug
         return
 
     def getDefaultDisplayMode(self):
@@ -518,8 +578,8 @@ class _ViewProviderFHPlane:
         return "Flat Lines"
 
     def onChanged(self, vp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n")
+        ''' If the 'prop' property changed for the ViewProvider 'vp' '''
+        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n") # debug
 
     def claimChildren(self):
         ''' Used to place other objects as childrens in the tree'''
@@ -534,7 +594,7 @@ class _ViewProviderFHPlane:
         return c
 
     def getIcon(self):
-        ''' Return the icon in XMP format which will appear in the tree view. This method is optional
+        ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
         return os.path.join(iconPath, 'plane_icon.svg')
@@ -552,7 +612,7 @@ class _CommandFHPlane:
         return {'Pixmap'  : os.path.join(iconPath, 'plane_icon.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPlane","FHPlane"),
                 'Accel': "E, P",
-                'ToolTip': QT_TRANSLATE_NOOP("EM_FHPlane","Creates a FastHenry uniform Plane object from scratch or from a selected base object (Part::Box or Draft::Rectangle)")}
+                'ToolTip': QT_TRANSLATE_NOOP("EM_FHPlane","Creates a FastHenry uniform Plane object from a selected base object (Part::Box or Draft::Rectangle)")}
                 
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
@@ -602,5 +662,85 @@ class _CommandFHPlane:
         else:
             FreeCAD.Console.PrintWarning(translate("EM","No base Part::Box or Draft::Rectangle selected. Cannot create a FHPlane.\n"))
 
+class _CommandFHPlaneAddRemoveNodeHole:
+    ''' The EM FastHenry uniform Plane (FHPlane) add, or remove, Node, or Hole, command definition
+'''
+    def GetResources(self):
+        return {'Pixmap'  : os.path.join(iconPath, 'plane_addremovenodehole_icon.svg') ,
+                'MenuText': QT_TRANSLATE_NOOP("EM_FHPlaneAddRemoveNodeHole","FHPlaneAddRemoveNodeHole"),
+                'Accel': "E, A",
+                'ToolTip': QT_TRANSLATE_NOOP("EM_FHPlaneAddRemoveNodeHole","Add/remove FHNodes or FHPlaneHoles to/from a FastHenry uniform Plane object")}
+                
+    def IsActive(self):
+        return not FreeCAD.ActiveDocument is None
+
+    def Activated(self):
+        # preferences
+        #p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/EM")
+        #self.Width = p.GetFloat("Width",200)
+        # get the selected object(s)
+        selection = FreeCADGui.Selection.getSelectionEx()
+        plane = None
+        nodes = []
+        holes = []
+        # if selection is not empty
+        for selobj in selection:
+            # find the FHPlane
+            if Draft.getType(selobj.Object) == "FHPlane":
+                plane = selobj.Object
+            elif Draft.getType(selobj.Object) == "FHNode":
+                nodes.append(selobj.Object)
+            elif Draft.getType(selobj.Object) == "FHPlaneHole":
+                holes.append(selobj.Object)
+        # whether or not a plane is selected, nodes/holes to be removed belong to a plane.
+        # Let's start with them.
+        addnodes = []
+        for node in nodes:
+            found = False
+            for parent in node.InList:
+                if Draft.getType(parent) == "FHPlane":
+                    # parent found, now remove the node
+                    FreeCAD.ActiveDocument.openTransaction(translate("EM","Remove FHPlane Node"))
+                    FreeCADGui.addModule("EM")
+                    FreeCADGui.doCommand('nodes = FreeCAD.ActiveDocument.'+parent.Name+'.Nodes')
+                    FreeCADGui.doCommand('nodes.remove(FreeCAD.ActiveDocument.'+node.Name+')')
+                    FreeCADGui.doCommand('FreeCAD.ActiveDocument.'+parent.Name+'.Nodes = nodes')
+                    FreeCAD.ActiveDocument.commitTransaction()
+                    found = True
+            if found == False:
+                addnodes.append(node)
+        addholes = []
+        for hole in holes:
+            found = False
+            for parent in hole.InList:
+                if Draft.getType(parent) == "FHPlane":
+                    # parent found, now remove the hole
+                    FreeCAD.ActiveDocument.openTransaction(translate("EM","Remove FHPlane Hole"))
+                    FreeCADGui.addModule("EM")
+                    FreeCADGui.doCommand('holes = FreeCAD.ActiveDocument.'+parent.Name+'.Holes')
+                    FreeCADGui.doCommand('holes.remove(FreeCAD.ActiveDocument.'+hole.Name+')')
+                    FreeCADGui.doCommand('FreeCAD.ActiveDocument.'+parent.Name+'.Holes = holes')
+                    FreeCAD.ActiveDocument.commitTransaction()
+                    found = True
+            if found == False:
+                addholes.append(hole)
+        # the remaining nodes/holes can only be added to a plane. For this we need a plane
+        # in the selection
+        if plane:
+            FreeCAD.ActiveDocument.openTransaction(translate("EM","Add nodes / holes to the FHPlane"))
+            FreeCADGui.addModule("EM")
+            FreeCADGui.doCommand('nodeList = FreeCAD.ActiveDocument.'+plane.Name+'.Nodes')
+            for node in addnodes:
+                FreeCADGui.doCommand('nodeList.append(FreeCAD.ActiveDocument.'+node.Name+')')
+            FreeCADGui.doCommand('FreeCAD.ActiveDocument.'+plane.Name+'.Nodes = nodeList')
+            FreeCADGui.doCommand('holeList = FreeCAD.ActiveDocument.'+plane.Name+'.Holes')
+            for hole in addholes:
+                FreeCADGui.doCommand('holeList.append(FreeCAD.ActiveDocument.'+hole.Name+')')
+            FreeCADGui.doCommand('FreeCAD.ActiveDocument.'+plane.Name+'.Holes = holeList')
+            FreeCAD.ActiveDocument.commitTransaction()
+        # recompute the document (assuming something has changed; otherwise this is dummy)
+        FreeCAD.ActiveDocument.recompute()
+        
 if FreeCAD.GuiUp:
     FreeCADGui.addCommand('EM_FHPlane',_CommandFHPlane())
+    FreeCADGui.addCommand('EM_FHPlaneAddRemoveNodeHole',_CommandFHPlaneAddRemoveNodeHole())

@@ -48,7 +48,6 @@ EMFHSOLVER_DEFNDEC = 1
 EMFHSOLVER_DEF_FILENAME = "fasthenry_input_file.inp"
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
-import EM
 from FreeCAD import Vector
 
 if FreeCAD.GuiUp:
@@ -67,11 +66,34 @@ else:
 __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
-def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmin=None,fmax=None,ndec=None,filename=None,name='FHSolver'):
-    '''Creates a FastHenry Solver object (all statements needed for the simulation)
+def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmin=None,fmax=None,ndec=None,folder=None,filename=None,name='FHSolver'):
+    ''' Creates a FastHenry Solver object (all statements needed for the simulation)
     
+        'units' is the FastHenry unit of measurement. Each unit in FreeCad will be
+            one unit of the corresponding unit of measurement in FastHenry.
+            Allowed values are: "km", "m", "cm", "mm", "um", "in", "mils".
+            Defaults to EMFHSOLVER_DEFUNITS
+        'sigma' is the float default conductivity. Defaults to EMFHSOLVER_DEF_SEGSIGMA
+        'nhinc' is the integer default nhinc parameter in FastHenry, for defining
+            the segment height discretization into filaments. Defaults to EMFHSOLVER_DEFNHINC
+        'nwinc' is the integer default nwinc parameter in FastHenry, for defining
+            the segment width discretization into filaments. Defaults to EMFHSOLVER_DEFNWINC
+        'rh' is the integer default rh parameter in FastHenry, for defining
+            the segment height discretization ratio. Defaults to EMFHSOLVER_DEFRH
+        'rw' is the integer default rw parameter in FastHenry, for defining
+            the segment width discretization ratio. Defaults to EMFHSOLVER_DEFRW
+        'fmin' is the float minimum simulation frequency 
+        'fmax' is the float maximum simulation frequency 
+        'ndec' is the float value defining how many frequency points per decade
+            will be simulated
+        'folder' is the folder into which the FastHenry file will be saved.
+            Defaults to the user's home path (e.g. in Windows "C:\Documents
+             and Settings\username\My Documents", in Linux "/home/username")
+        'filename' is the name of the file that will be exported.
+            Defaults to EMFHSOLVER_DEF_FILENAME
+        'name' is the name of the object
     Example:
-    TBD
+        solver = makeFHSolver()
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
@@ -126,6 +148,12 @@ def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmi
         obj.Filename = filename
     else:
         obj.Filename = EMFHSOLVER_DEF_FILENAME
+    if folder:
+        obj.Folder = folder
+    else:
+        # if not specified, default to the user's home path
+        # (e.g. in Windows "C:\Documents and Settings\username\My Documents", in Linux "/home/username")
+        obj.Folder = FreeCAD.ConfigGet("UserHomePath")
     # return the newly created Python object
     return obj
 
@@ -142,7 +170,8 @@ class _FHSolver:
         obj.addProperty("App::PropertyFloat","fmin","EM",QT_TRANSLATE_NOOP("App::Property","Lowest simulation frequency ('fmin' parameter in '.freq')"))
         obj.addProperty("App::PropertyFloat","fmax","EM",QT_TRANSLATE_NOOP("App::Property","Highest simulation frequency ('fmzx' parameter in '.freq')"))
         obj.addProperty("App::PropertyFloat","ndec","EM",QT_TRANSLATE_NOOP("App::Property","Number of desired frequency points per decade ('ndec' parameter in '.freq')"))
-        obj.addProperty("App::PropertyFile","Filename","EM",QT_TRANSLATE_NOOP("App::Property","Simulation filename when exporting to FastHenry input file format"))
+        obj.addProperty("App::PropertyPath","Folder","EM",QT_TRANSLATE_NOOP("App::Property","Folder path for exporting the file in FastHenry input file format"))
+        obj.addProperty("App::PropertyString","Filename","EM",QT_TRANSLATE_NOOP("App::Property","Simulation filename when exporting to FastHenry input file format"))
         obj.Proxy = self
         self.Type = "FHSolver"
         obj.Units = EMFHSOLVER_UNITS
@@ -202,9 +231,8 @@ class _ViewProviderFHSolver:
         return
 
     def updateData(self, fp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n")
         ''' If a property of the handled feature has changed we have the chance to handle this here '''
+        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n") # debug
         return
 
     def getDefaultDisplayMode(self):
@@ -212,11 +240,11 @@ class _ViewProviderFHSolver:
         return "Flat Lines"
 
     def onChanged(self, vp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n")
+        ''' If the 'prop' property changed for the ViewProvider 'vp' '''
+        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n") # debug
 
     def getIcon(self):
-        ''' Return the icon in XMP format which will appear in the tree view. This method is optional
+        ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
         return os.path.join(iconPath, 'solver_icon.svg')
@@ -240,8 +268,6 @@ class _CommandFHSolver:
         return not FreeCAD.ActiveDocument is None
 
     def Activated(self):
-        # init properties (future)
-        #self.Length = None
         # preferences
         #p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/EM")
         #self.Width = p.GetFloat("Width",200)

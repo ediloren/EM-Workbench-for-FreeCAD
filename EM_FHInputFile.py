@@ -30,8 +30,8 @@ __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
-import EM
 from FreeCAD import Vector
+from PySide import QtCore, QtGui
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -50,14 +50,27 @@ __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHInputFile(doc=None,filename=None,folder=None):
-    '''Creates a FastHenry input file
+    '''Outputs a FastHenry input file based on the active document geometry
     
-    'doc' is the Document object that must contain at least one 
-        EM_FHSolver object and the relevant geometry.
-        If no 'doc' is given, the active document is used, if any.
+       'doc' is the Document object that must contain at least one 
+            EM_FHSolver object and the relevant geometry.
+            If no 'doc' is given, the active document is used, if any.
+       'filename' is the filename to use. If not passed as an argument,
+            the 'Filename' property of the FHSolver object contained in the document
+            will be used. If the 'Filename" string in the FHSolver object is empty,
+            the function builds a filename concatenating the document name
+            with the default extension EMFHSOLVER_DEF_FILENAME.
+            Whatever the name, if a file with the same name exists in the target
+            folder, the user is prompted to know if he/she wants to overwrite it.
+        'folder' is the folder where the file will be stored. If not passed
+            as an argument, the 'Folder' property of the FHSolver object
+            contained in the document will be used. If the 'Folder' string
+            in the FHSolver object is empty, the vunction defaults to the
+            user's home path (e.g. in Windows "C:\Documents and Settings\
+            username\My Documents", in Linux "/home/username")
     
     Example:
-    TBD
+         makeFHInputFile()
 '''
     if not doc:
         doc = App.ActiveDocument
@@ -71,7 +84,8 @@ def makeFHInputFile(doc=None,filename=None,folder=None):
         FreeCAD.Console.PrintWarning(translate("EM","FHSolver object not found in the document. Aborting."))
         return
     else:
-        # TBC warning: may warn the user if more that one solver is present per document
+        if len(solver) > 1:
+            FreeCAD.Console.PrintWarning(translate("EM","More than one FHSolver object found in the document. Using the first one."))
         solver = solver[0]
     if not filename:
         # if 'filename' was not passed as an argument, retrieve it from the 'solver' object
@@ -84,16 +98,26 @@ def makeFHInputFile(doc=None,filename=None,folder=None):
         # otherwise, if the user passed a filename to the function, update it in the 'solver' object
         solver.Filename = filename
     if not folder:
-        # if not specified, default to the user's home path
-        # (e.g. in Windows "C:\Documents and Settings\username\My Documents", in Linux "/home/username")
-        folder = FreeCAD.ConfigGet("UserHomePath")
+        # if 'folder' was not passed as an argument, retrieve it from the 'solver' object
+        # (this should be the standard way)
+        if solver.Folder == "":
+            # if not specified, default to the user's home path
+            # (e.g. in Windows "C:\Documents and Settings\username\My Documents", in Linux "/home/username")
+            solver.Folder = FreeCAD.ConfigGet("UserHomePath")
+        folder = solver.Folder
     if not os.path.isdir(folder):
+        # if 'folder' does not exists, create it
         os.mkdir(folder)
     # check if exists
     if os.path.isfile(folder + os.sep + filename):
-        # filename already exists! Do not overwrite
-        FreeCAD.Console.PrintWarning(translate("EM","Filename already exists") + " '" + str(folder) + str(os.sep) + str(filename) + "'\n")
-        return
+        # filename already exists! Check if overwrite
+        diag = QtGui.QMessageBox()
+        diag.setText("File '" + str(filename) + "' exists in the folder '" + str(folder) + "'")
+        diag.setInformativeText("Do you want to overwrite?")
+        diag.setStandardButtons(QtGui.QMessageBox.Cancel | QtGui.QMessageBox.Ok)
+        ret = diag.exec_()
+        if ret == QtGui.QMessageBox.Cancel:
+            return
     FreeCAD.Console.PrintMessage(QT_TRANSLATE_NOOP("EM","Exporting to FastHenry file ") + "'" + folder + os.sep + filename + "'\n")
     with open(folder + os.sep + filename, 'w') as fid:
         # serialize the header
@@ -110,6 +134,13 @@ def makeFHInputFile(doc=None,filename=None,folder=None):
             fid.write("* Segments\n")
             for segment in segments:
                 segment.Proxy.serialize(fid)
+            fid.write("\n")
+        # then the paths
+        paths = [obj for obj in doc.Objects if Draft.getType(obj) == "FHPath"]
+        if paths:
+            fid.write("* Segments from paths\n")
+            for path in paths:
+                path.Proxy.serialize(fid)
             fid.write("\n")
         # then the planes
         planes = [obj for obj in doc.Objects if Draft.getType(obj) == "FHPlane"]
@@ -148,8 +179,6 @@ class _CommandFHInputFile:
         return not FreeCAD.ActiveDocument is None
 
     def Activated(self):
-        # init properties (future)
-        #self.Length = None
         # preferences
         #p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/EM")
         #self.Width = p.GetFloat("Width",200)
@@ -161,5 +190,3 @@ class _CommandFHInputFile:
 
 if FreeCAD.GuiUp:
     FreeCADGui.addCommand('EM_FHInputFile',_CommandFHInputFile())
-
-#pts = [obj for obj in FreeCAD.ActiveDocument.Objects if Draft.getType(obj) == "Point"]

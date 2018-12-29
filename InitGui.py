@@ -42,9 +42,11 @@ class EMWorkbench(Workbench):
         # import the EM module (and therefore all commands makeXXX)
         import EM
         # E.M. tools
-        self.emtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPlane",
-                "EM_FHPlaneHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile"]
+        self.emfhtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPath", "EM_FHPlane",
+                "EM_FHPlaneHole", "EM_FHPlaneAddRemoveNodeHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile"]
         # draft tools
+        # setup menus
+        self.draftcmdList = ["Draft_Line","Draft_Rectangle"]
         self.draftmodtools = ["Draft_Move","Draft_Rotate","Draft_Offset",
                 "Draft_Trimex", "Draft_Upgrade", "Draft_Downgrade", "Draft_Scale",
                 "Draft_Shape2DView","Draft_Draft2Sketch","Draft_Array",
@@ -57,10 +59,11 @@ class EMWorkbench(Workbench):
                          'Draft_Snap_Dimensions','Draft_Snap_WorkingPlane']
 
         def QT_TRANSLATE_NOOP(scope, text): return text
-        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. tools"),self.emtools)
+        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. tools"),self.emfhtools)
+        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft creation tools"),self.draftcmdList)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft mod tools"),self.draftmodtools)
-        self.appendMenu(QT_TRANSLATE_NOOP("EM","&EM"),self.emtools)
-        self.appendMenu(QT_TRANSLATE_NOOP("EM","&Draft"),self.draftmodtools+self.treecmdList)
+        self.appendMenu(QT_TRANSLATE_NOOP("EM","&EM"),self.emfhtools)
+        self.appendMenu(QT_TRANSLATE_NOOP("EM","&Draft"),self.draftcmdList+self.draftmodtools+self.treecmdList)
         self.appendMenu([QT_TRANSLATE_NOOP("EM","&Draft"),QT_TRANSLATE_NOOP("arch","Snapping")],self.snapList)
         #FreeCADGui.addIconPath(":/icons")
         #FreeCADGui.addLanguagePath(":/translations")
@@ -70,7 +73,7 @@ class EMWorkbench(Workbench):
 
     def Activated(self):
         Log("EM workbench activated\n")
-                
+        
     def Deactivated(self):
         Log("EM workbench deactivated\n")
 

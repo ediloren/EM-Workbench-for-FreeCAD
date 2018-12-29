@@ -26,4 +26,4 @@
 
 
 # add import/export types
-FreeCAD.addExportType("FastHenry file format (*.inp)","exportFH")
+#FreeCAD.addExportType("FastHenry file format (*.inp)","exportFH")

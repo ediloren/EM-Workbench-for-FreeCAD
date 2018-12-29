@@ -43,8 +43,10 @@ if FreeCAD.GuiUp:
 	import FreeCADGui
 	FreeCADGui.updateLocale()
 
+from EM_Globals import *
 from EM_FHNode import *
 from EM_FHSegment import *
+from EM_FHPath import *
 from EM_FHPlaneHole import *
 from EM_FHPlane import *
 from EM_FHPort import *

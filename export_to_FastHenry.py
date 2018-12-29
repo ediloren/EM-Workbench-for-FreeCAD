@@ -153,9 +153,9 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
                 elif type(edge.Curve) == Part.Line:
                     # if w=0, the following condition is always true
                     if edge.Length > abs(w)*3:
-                        nodes.append(edge.Curve.StartPoint)
+                        nodes.append(edge.valueAt(edge.FirstParameter))
                     # quick & dirty trick
-                    lastvertex = edge.Curve.EndPoint
+                    lastvertex = edge.valueAt(edge.LastParameter)
                 else:
                     FreeCAD.Console.PrintMessage("Unknown edge: " + str(type(edge.Curve)) + " in '" + obj.Label + "',, skipping\n")
             # now add the very last vertex

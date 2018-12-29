@@ -33,13 +33,11 @@ __url__ = "http://www.fastfieldsolvers.com"
 #
 EMFHSEGMENT_DEF_SEGWIDTH = 0.2
 EMFHSEGMENT_DEF_SEGHEIGHT = 0.2
-# tolerance in degrees when verifying if vectors are parallel
-EMFHSEGMENT_PARTOL = 0.01
-# tolerance in length
-EMFHSEGMENT_LENTOL = 1e-12
+# imported defines
+from EM_Globals import EMFHSEGMENT_PARTOL, EMFHSEGMENT_LENTOL
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
-import EM
+from EM_Globals import makeSegShape
 from FreeCAD import Vector
 
 if FreeCAD.GuiUp:
@@ -59,14 +57,17 @@ __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHSegment(baseobj=None,nodeStart=None,nodeEnd=None,name='FHSegment'):
-    '''Creates a FastHenry segment ('E' statement in FastHenry)
+    ''' Creates a FastHenry segment ('E' statement in FastHenry)
     
-    'baseobj' is the line object on which the node is based.
-        If no 'baseobj' is given, the user must assign a base
-        object later on, to be able to use this object.
-    
+        'baseobj' is the line object on which the node is based.
+            If no 'baseobj' is given, the user must provide the
+            'nodeStart' and 'nodeEnd' parameters.
+        'nodeStart' is the segment starting node FHNode object
+        'nodeEnd' is the segment ending node FHNode object
+        'name' is the name of the object
+     
     Example:
-    TBD
+        segment = makeFHSegment(nodeStart=App.ActiveDocument.FHNode002,nodeEnd=App.ActiveDocument.FHNode003)
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
@@ -89,9 +90,10 @@ def makeFHSegment(baseobj=None,nodeStart=None,nodeEnd=None,name='FHSegment'):
     if baseobj and not obj.NodeStart and not obj.NodeEnd:
         if Draft.getType(baseobj) == "Wire":
             if len(baseobj.Shape.Vertexes) == 2:
+                import EM_FHNode
                 obj.Base = baseobj
-                obj.NodeStart = EM.makeFHNode(X=obj.Base.Start.x, Y=obj.Base.Start.y, Z=obj.Base.Start.z)
-                obj.NodeEnd = EM.makeFHNode(X=obj.Base.End.x, Y=obj.Base.End.y, Z=obj.Base.End.z)
+                obj.NodeStart = EM_FHNode.makeFHNode(X=obj.Base.Start.x, Y=obj.Base.Start.y, Z=obj.Base.Start.z)
+                obj.NodeEnd = EM_FHNode.makeFHNode(X=obj.Base.End.x, Y=obj.Base.End.y, Z=obj.Base.End.z)
             else:
                 FreeCAD.Console.PrintWarning(translate("EM","FHSegments can only be based on Line objects (not multi-segment wires)"))
         else:
@@ -126,6 +128,7 @@ class _FHSegment:
     def execute(self, obj):
         ''' this method is mandatory. It is called on Document.recompute() 
     '''
+        #FreeCAD.Console.PrintWarning("_FHSegment execute()\n") #debug
         if obj.NodeStart == None:
             return
         elif Draft.getType(obj.NodeStart) <> "FHNode":
@@ -136,6 +139,17 @@ class _FHSegment:
         elif Draft.getType(obj.NodeEnd) <> "FHNode":
             FreeCAD.Console.PrintWarning(translate("EM","NodeEnd is not a FHNode"))
             return
+        # the FHSegment has no Placement in itself:
+        # 1) either it has the same placement of the Base object
+        #    (FHSegment will track the Base object, if present)
+        #     However, since the Base object is a Draft::Wire, the 'Start' and 'End' points
+        #     are in absolute coordinates. 
+        # 2) or it has a position defined by the endpoint nodes
+        # So let's keep the FHSegment placement at zero, and use the FHNodes to move the segment position.
+        # This is also necessary as we should not change the segment cross-section orientation
+        # using the Placement, otherwise it will not be relative to the global axis system
+        if obj.Placement <> FreeCAD.Placement():
+            obj.Placement = FreeCAD.Placement()
         # check if we have a 'Base' object; if so, if segment end nodes
         # were already defined, re-set them according to the 'Base' object;
         # this means that the user cannot move freely the end nodes, if
@@ -150,10 +164,6 @@ class _FHSegment:
                     return
                 # ok, it's valid. Let's verify if this is a Wire.
                 if Draft.getType(obj.Base) == "Wire":
-                    # set the FHSegment Placement to the same placement of the Base object
-                    # (FHSegment will track the Base object, if present)
-                    #obj.Placement = obj.Base.Placement
-                    obj.Placement = FreeCAD.Placement()
                     if obj.NodeStart <> None:
                         abs_pos = obj.NodeStart.Proxy.getAbsCoord()
                         # 'obj.Base.Start' is an absolute position
@@ -165,103 +175,34 @@ class _FHSegment:
                         # 'obj.Base.Start' is an absolute position
                         # if 'NodeStart' is not in that position, move it
                         if (abs_pos-obj.Base.End).Length > EMFHSEGMENT_LENTOL:
-                            obj.NodeEnd.Proxy.setAbsCoord(obj.Base.End)               
+                            obj.NodeEnd.Proxy.setAbsCoord(obj.Base.End)
         if obj.Width == None or obj.Width <= 0:
             obj.Width = EMFHSEGMENT_DEF_SEGWIDTH
         if obj.Height == None or obj.Height <= 0:
             obj.Height = EMFHSEGMENT_DEF_SEGHEIGHT
         # and finally, if everything is ok, make and assing the shape
         self.assignShape(obj)    
+        #FreeCAD.Console.PrintWarning("_FHSegment execute() ends\n") #debug
 
     def assignShape(self, obj):
         ''' Compute and assign the shape to the object 'obj' '''
         n1 = obj.NodeStart.Proxy.getAbsCoord()
         n2 = obj.NodeEnd.Proxy.getAbsCoord()
-        shape = self.makeSegShape(n1,n2,obj.Width,obj.Height,obj.ww)
+        shape = makeSegShape(n1,n2,obj.Width,obj.Height,obj.ww)
         # shape may be None, e.g. if endpoints coincide. Do not assign in this case
         if shape:
             obj.Shape = shape
-
-    def makeSegShape(self,n1,n2,width,height,ww):
-        ''' Compute a segment shape given:
-
-            'n1': start node position (Vector)
-            'n2': end node position (Vector)
-            'width': segment width
-            'height': segment height
-            'ww': cross-section direction (along width)
-    '''
-        # do not accept coincident nodes
-        if (n2-n1).Length < EMFHSEGMENT_LENTOL:
-            return None
-        # vector along length
-        wl = n2-n1;
-        # calculate the vector along the height
-        wh = (ww.cross(wl))
-        # if cross-section is not defined, by default the width vector
-        # is assumed to lie in x-y plane perpendicular to the length.
-        # If the length direction is parallel to the z-axis, then 
-        # the width is assumed along the x-axis. 
-        # The same is done if 'ww' has been defined parallel to 'wl'
-        if ww.Length < EMFHSEGMENT_LENTOL or wh.Length < EMFHSEGMENT_LENTOL:
-            # if length parallel to the z-axis
-            if wl.getAngle(Vector(0,0,1))*FreeCAD.Units.Radian < EMFHSEGMENT_PARTOL:
-                ww = Vector(1,0,0)
-            else:
-                ww = (wl.cross(Vector(0,0,1))).normalize()
-            # and re-calculate 'wh' since we changed 'ww'
-            wh = (ww.cross(wl))
-        # normalize the freshly calculated 'wh'
-        wh.normalize()
-        # copy ww as the multiply() method changes the vector on which is called
-        wwHalf = Vector(ww)
-        # must normalize. We don't want to touch 'ww', as this is user's defined
-        wwHalf.normalize()
-        wwHalf.multiply(width / 2)
-        # copy wh as the multiply() method changes the vector on which is called
-        whHalf = Vector(wh)
-        whHalf.multiply(height / 2)
-        # calculate the vertexes
-        v11 = n1 - wwHalf - whHalf
-        v12 = n1 + wwHalf - whHalf
-        v13 = n1 + wwHalf + whHalf
-        v14 = n1 - wwHalf + whHalf
-        v21 = n2 - wwHalf - whHalf
-        v22 = n2 + wwHalf - whHalf
-        v23 = n2 + wwHalf + whHalf
-        v24 = n2 - wwHalf + whHalf
-        # now make faces
-        # front
-        poly = Part.makePolygon( [v11,v12,v13,v14,v11])
-        face1 = Part.Face(poly)
-        # back
-        poly = Part.makePolygon( [v21,v24,v23,v22,v21])
-        face2 = Part.Face(poly)
-        # left
-        poly = Part.makePolygon( [v11,v14,v24,v21,v11])
-        face3 = Part.Face(poly)
-        # right
-        poly = Part.makePolygon( [v12,v22,v23,v13,v12])
-        face4 = Part.Face(poly)
-        # top
-        poly = Part.makePolygon( [v14,v13,v23,v24,v14])
-        face5 = Part.Face(poly)
-        # bottom
-        poly = Part.makePolygon( [v11,v21,v22,v12,v11])
-        face6 = Part.Face(poly)
-        # create a shell. Does not need to be solid.
-        segShell = Part.makeShell([face1,face2,face3,face4,face5,face6])
-        return segShell   
     
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
     '''
-        #FreeCAD.Console.PrintWarning("\n_FHSegment onChanged(" + str(prop)+")\n") #debug
+        #FreeCAD.Console.PrintWarning("_FHSegment onChanged(" + str(prop)+")\n") #debug
         if not hasattr(self,"Object"):
             # on restore, self.Object is not there anymore (JSON does not serialize complex objects
             # members of the class, so __getstate__() and __setstate__() skip them);
             # so we must "re-attach" (re-create) the 'self.Object'
             self.Object = obj
+        #FreeCAD.Console.PrintWarning("_FHSegment onChanged(" + str(prop)+") ends\n") #debug
             
     def serialize(self,fid):
         ''' Serialize the object to the 'fid' file descriptor
@@ -304,9 +245,8 @@ class _ViewProviderFHSegment:
         return
 
     def updateData(self, fp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n")
         ''' If a property of the handled feature has changed we have the chance to handle this here '''
+        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n") # debug
         return
 
     def getDefaultDisplayMode(self):
@@ -314,8 +254,8 @@ class _ViewProviderFHSegment:
         return "Flat Lines"
 
     def onChanged(self, vp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n")
+        ''' If the 'prop' property changed for the ViewProvider 'vp' '''
+        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n") # debug
 
     def claimChildren(self):
         ''' Used to place other objects as childrens in the tree'''
@@ -330,7 +270,7 @@ class _ViewProviderFHSegment:
         return c
 
     def getIcon(self):
-        ''' Return the icon in XMP format which will appear in the tree view. This method is optional
+        ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
         return os.path.join(iconPath, 'segment_icon.svg')
@@ -354,8 +294,6 @@ class _CommandFHSegment:
         return not FreeCAD.ActiveDocument is None
 
     def Activated(self):
-        # init properties (future)
-        #self.Length = None
         # preferences
         #p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/EM")
         #self.Width = p.GetFloat("Width",200)
@@ -396,7 +334,7 @@ class _CommandFHSegment:
             done = True
         # if no selection, or nothing good in the selected objects
         if not done:
-            #FreeCAD.DraftWorkingPlane.setup()
+            FreeCAD.DraftWorkingPlane.setup()
             # get two 3D point via Snapper, setting the callback functions
             self.points = []
             FreeCADGui.Snapper.getPoint(callback=self.getPoint)
@@ -408,10 +346,8 @@ class _CommandFHSegment:
         self.points.append(point)
         if len(self.points) == 1:
             # get the second point
-            FreeCADGui.Snapper.getPoint(last=self.points[0],callback=self.getPoint)
+            FreeCADGui.Snapper.getPoint(last=self.points[0],callback=self.getPoint,movecallback=self.move)
         elif len(self.points) >= 2:
-            #coord1 = FreeCAD.DraftWorkingPlane.getLocalCoords(self.points[0])
-            #coord2 = FreeCAD.DraftWorkingPlane.getLocalCoords(self.points[1])
             coord1 = self.points[0]
             coord2 = self.points[1]
             FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FHNode"))
@@ -427,6 +363,14 @@ class _CommandFHSegment:
             #if self.continueCmd:
             #    self.Activated()
 
+    # this is used to display the global point position information
+    # in the Snapper user interface. By default it would display the relative
+    # point position on the DraftWorkingPlane (see DraftSnap.py, move() member).
+    # This would be different from the behavior of Draft.Point command.
+    def move(self,point=None,snapInfo=None):
+        if FreeCADGui.Snapper.ui:
+            FreeCADGui.Snapper.ui.displayPoint(point)
+            
 if FreeCAD.GuiUp:
     FreeCADGui.addCommand('EM_FHSegment',_CommandFHSegment())
 

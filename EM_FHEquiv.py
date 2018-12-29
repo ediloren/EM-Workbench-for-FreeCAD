@@ -36,7 +36,6 @@ __url__ = "http://www.fastfieldsolvers.com"
 EMFHEQUIV_LENTOL = 1e-12
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
-import EM
 from FreeCAD import Vector
 
 if FreeCAD.GuiUp:
@@ -56,13 +55,14 @@ __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHEquiv(node1=None,node2=None,name='FHEquiv'):
-    ''' Creates a FastHenry node equivalence ('.equiv' statement in FastHenry)
+    '''Creates a FastHenry node equivalence ('.equiv' statement in FastHenry)
     
-        'node1' is the first node to shortcut
-        'node2' is the second node to shortcut
+       'node1' is the first node to short-circuit
+       'node2' is the second node to short-circuit
+       'name' is the name of the object
         
     Example:
-    TBD
+        equiv = makeFHEquiv(node1,node2)
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
@@ -88,8 +88,8 @@ class _FHEquiv:
     '''The EM FastHenry node Equivalence object'''
     def __init__(self, obj):
         ''' Add properties '''
-        obj.addProperty("App::PropertyLink","Node1","EM",QT_TRANSLATE_NOOP("App::Property","First FHNode to shortcut"))
-        obj.addProperty("App::PropertyLink","Node2","EM",QT_TRANSLATE_NOOP("App::Property","Second FHNode to shortcut"))
+        obj.addProperty("App::PropertyLink","Node1","EM",QT_TRANSLATE_NOOP("App::Property","First FHNode to short-circuit"))
+        obj.addProperty("App::PropertyLink","Node2","EM",QT_TRANSLATE_NOOP("App::Property","Second FHNode to short-circuit"))
         obj.Proxy = self
         self.Type = "FHEquiv"
         # save the object in the class, to store or retrieve specific data from it
@@ -171,9 +171,8 @@ class _ViewProviderFHEquiv:
         return
 
     def updateData(self, fp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n")
         ''' If a property of the handled feature has changed we have the chance to handle this here '''
+        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n") # debug
         return
 
     def getDefaultDisplayMode(self):
@@ -181,11 +180,11 @@ class _ViewProviderFHEquiv:
         return "Flat Lines"
 
     def onChanged(self, vp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n")
+        ''' If the 'prop' property changed for the ViewProvider 'vp' '''
+        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n") # debug
 
     def claimChildren(self):
-        ''' Used to place other objects as childrens in the tree'''
+        ''' Used to place other objects as children in the tree'''
         c = []
         if hasattr(self,"Object"):
             if hasattr(self.Object,"Node1"):
@@ -195,7 +194,7 @@ class _ViewProviderFHEquiv:
         return c
 
     def getIcon(self):
-        ''' Return the icon in XMP format which will appear in the tree view. This method is optional
+        ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
         return os.path.join(iconPath, 'equiv_icon.svg')
@@ -219,8 +218,6 @@ class _CommandFHEquiv:
         return not FreeCAD.ActiveDocument is None
 
     def Activated(self):
-        # init properties (future)
-        #self.Length = None
         # preferences
         #p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/EM")
         #self.Width = p.GetFloat("Width",200)

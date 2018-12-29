@@ -36,7 +36,6 @@ __url__ = "http://www.fastfieldsolvers.com"
 EMFHPORT_LENTOL = 1e-12
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
-import EM
 from FreeCAD import Vector
 
 if FreeCAD.GuiUp:
@@ -58,11 +57,12 @@ iconPath = os.path.join( __dir__, 'Resources' )
 def makeFHPort(nodeStart=None,nodeEnd=None,name='FHPort'):
     ''' Creates a FastHenry port ('.external' statement in FastHenry)
     
-        'nodeStart' is the positive node
-        'nodeEnd' is the negative node
+        'nodeStart' is the positive node FHNode object
+        'nodeEnd' is the negative node FHNode object
+        'name' is the name of the object
         
     Example:
-    TBD
+        port = makeFHPort(App.ActiveDocument.FHNode,App.ActiveDocument.FHNode001)
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
@@ -128,8 +128,8 @@ class _FHPort:
     def makePortShape(self,n1,n2):
         ''' Compute a port shape given:
 
-            'n1': start node position (Vector)
-            'n2': end node position (Vector)
+            'n1': start node position (FreeCAD.Vector)
+            'n2': end node position (FreeCAD.Vector)
     '''
         # do not accept coincident nodes
         if (n2-n1).Length < EMFHPORT_LENTOL:
@@ -185,9 +185,8 @@ class _ViewProviderFHPort:
         return
 
     def updateData(self, fp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n")
         ''' If a property of the handled feature has changed we have the chance to handle this here '''
+        #FreeCAD.Console.PrintMessage("ViewProvider updateData(),  property: " + str(prop) + "\n") # debug
         return
 
     def getDefaultDisplayMode(self):
@@ -195,8 +194,8 @@ class _ViewProviderFHPort:
         return "Flat Lines"
 
     def onChanged(self, vp, prop):
-        ''' Print the name of the property that has changed '''
-        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n")
+        ''' If the 'prop' property changed for the ViewProvider 'vp' '''
+        #FreeCAD.Console.PrintMessage("ViewProvider onChanged(), property: " + str(prop) + "\n") # debug
 
     def claimChildren(self):
         ''' Used to place other objects as childrens in the tree'''
@@ -209,9 +208,9 @@ class _ViewProviderFHPort:
         return c
 
     def getIcon(self):
-        ''' Return the icon in XMP format which will appear in the tree view. This method is optional
+        ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
-        '''
+         '''
         return os.path.join(iconPath, 'port_icon.svg')
 
     def __getstate__(self):
@@ -233,8 +232,6 @@ class _CommandFHPort:
         return not FreeCAD.ActiveDocument is None
 
     def Activated(self):
-        # init properties (future)
-        #self.Length = None
         # preferences
         #p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/EM")
         #self.Width = p.GetFloat("Width",200)
