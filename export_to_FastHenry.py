@@ -471,3 +471,219 @@ def create_FH_plane(filename="", seg1=10, seg2=10, wx=10, wy=10, name="", custDo
         
     fid.closed
         
+def meshSolidWithSegments(obj=None,delta=1.0,deltaX=0.0,deltaY=0.0,deltaZ=0.0,stayInside=False,generateSegs=True):
+    ''' Mesh a solid object with a grid of segments
+'''
+    if obj == None:
+        return
+    if not hasattr(obj,"Shape"):
+        return
+    from FreeCAD import Vector
+    import EM_FHNode
+    import EM_FHSegment
+    import numpy as np
+    # if the user specified no deltaX
+    if deltaX <= 0.0:
+        deltaX = float(delta)
+    # if the user specified no deltaY
+    if deltaY <= 0.0:
+        deltaY = float(delta)
+    # if the user specified no deltaZ
+    if deltaZ <= 0.0:
+        deltaZ = float(delta)   
+    bbox = obj.Shape.BoundBox
+    stepsX = int(bbox.XLength/deltaX)
+    deltaSideX = (bbox.XLength - deltaX * stepsX) / 2.0
+    stepsY = int(bbox.YLength/deltaY)
+    deltaSideY = (bbox.YLength - deltaY * stepsY) / 2.0
+    stepsZ = int(bbox.ZLength/deltaZ)
+    deltaSideZ = (bbox.ZLength - deltaZ * stepsZ) / 2.0
+    # create the 3D array of nodes
+    isNode=np.full((stepsX+1,stepsY+1,stepsZ+1), False, np.bool)
+    # and now iterate to find which node is inside the object 'obj'
+    pos_x = bbox.XMin + deltaSideX
+    for step_x in range(0,stepsX+1):
+        pos_y = bbox.YMin + deltaSideY
+        for step_y in range(0,stepsY+1):
+            pos_z = bbox.ZMin + deltaSideZ
+            for step_z in range(0,stepsZ+1):
+                # if the point is inside the object shape, or on the surface, flag it
+                if obj.Shape.isInside(Vector(pos_x,pos_y,pos_z),0.0,True):
+                    isNode[step_x,step_y,step_z] = True
+                pos_z = pos_z + deltaZ
+            pos_y = pos_y + deltaY
+        pos_x = pos_x + deltaX
+    # if we don't need to stay within the object shape boundaries,
+    # the segment will overlap the shape contour (just like the uniform conductive planes)
+    nodes=np.full((stepsX+1,stepsY+1,stepsZ+1), None, np.object)
+    if stayInside == False:
+        pos_x = bbox.XMin + deltaSideX
+        for step_x in range(0,stepsX+1):
+            pos_y = bbox.YMin + deltaSideY
+            for step_y in range(0,stepsY+1):
+                pos_z = bbox.ZMin + deltaSideZ
+                for step_z in range(0,stepsZ+1):
+                    # if the point is inside the object shape, or on the surface, flag it
+                    if isNode[step_x,step_y,step_z] == True:
+                        # create the node
+                        node = EM_FHNode.makeFHNode(X=pos_x, Y=pos_y, Z=pos_z)
+                        # store it in the array
+                        nodes[step_x,step_y,step_z] = node
+                    pos_z = pos_z + deltaZ
+                pos_y = pos_y + deltaY
+            pos_x = pos_x + deltaX  
+    # if we must stay within the object shape boundaries (within the accuracy
+    # of the point sampling)
+    else:
+        pos_x = bbox.XMin + deltaSideX
+        for step_x in range(0,stepsX):
+            pos_y = bbox.YMin + deltaSideY
+            for step_y in range(0,stepsY):
+                pos_z = bbox.ZMin + deltaSideZ
+                for step_z in range(0,stepsZ):
+                    # if all the eight cube corners are inside the object shape,
+                    # we consider the center point well inside the object shape, i.e. also
+                    # for a segment lying on a plane parallel to the plane xy,
+                    # with width=deltaX, height=deltaY we are within the object
+                    if (isNode[step_x,step_y,step_z] == True and isNode[step_x+1,step_y,step_z] == True and
+                        isNode[step_x,step_y+1,step_z] == True and isNode[step_x+1,step_y+1,step_z] == True and
+                        isNode[step_x,step_y,step_z+1] == True and isNode[step_x+1,step_y,step_z+1] == True and
+                        isNode[step_x,step_y+1,step_z+1] == True and isNode[step_x+1,step_y+1,step_z+1] == True):
+                            # create the node
+                            node = EM_FHNode.makeFHNode(X=pos_x+deltaX/2.0, Y=pos_y+deltaY/2.0, Z=pos_z+deltaZ/2.0)
+                            # store it in the array
+                            nodes[step_x,step_y,step_z] = node
+                    pos_z = pos_z + deltaZ
+                pos_y = pos_y + deltaY
+            pos_x = pos_x + deltaX  
+    # now create the grid of segments
+    # first along x
+    for step_z in range(0,stepsZ+1):
+        for step_y in range(0,stepsY+1):
+            for step_x in range(0,stepsX):
+                # if the node and the next are inside the object shape, create the segment
+                if nodes[step_x,step_y,step_z] <> None and nodes[step_x+1,step_y,step_z] <> None:
+                    segment = EM_FHSegment.makeFHSegment(nodeStart=nodes[step_x,step_y,step_z],nodeEnd=nodes[step_x+1,step_y,step_z],width=deltaX,height=deltaZ)
+    # then along y
+    for step_z in range(0,stepsZ+1):
+        for step_x in range(0,stepsX+1):
+            for step_y in range(0,stepsY):
+                # if the node and the next are inside the object shape, create the segment
+                if nodes[step_x,step_y,step_z] <> None and nodes[step_x,step_y+1,step_z] <> None:
+                    segment = EM_FHSegment.makeFHSegment(nodeStart=nodes[step_x,step_y,step_z],nodeEnd=nodes[step_x,step_y+1,step_z],width=deltaY,height=deltaZ)
+    # finally along z
+    for step_x in range(0,stepsX+1):
+        for step_y in range(0,stepsY+1):
+            for step_z in range(0,stepsZ):
+                # if the node and the next are inside the object shape, create the segment
+                if nodes[step_x,step_y,step_z] <> None and nodes[step_x,step_y,step_z+1] <> None:
+                    segment = EM_FHSegment.makeFHSegment(nodeStart=nodes[step_x,step_y,step_z],nodeEnd=nodes[step_x,step_y,step_z+1],width=deltaX,height=deltaY)
+
+def meshSolidWithVoxels(obj=None,delta=1.0,stayInside=False):
+    ''' Voxel a solid object
+'''
+    if obj == None:
+        return
+    if not hasattr(obj,"Shape"):
+        return
+    from FreeCAD import Vector
+    import numpy as np
+    bbox = obj.Shape.BoundBox
+    stepsX = int(bbox.XLength/delta)
+    deltaSideX = (bbox.XLength - delta * stepsX) / 2.0
+    stepsY = int(bbox.YLength/delta)
+    deltaSideY = (bbox.YLength - delta * stepsY) / 2.0
+    stepsZ = int(bbox.ZLength/delta)
+    deltaSideZ = (bbox.ZLength - delta * stepsZ) / 2.0
+    print("X="+str(stepsX)+" Y="+str(stepsY)+" Z="+str(stepsZ)+" tot="+str(stepsX*stepsY*stepsZ))
+    # create the 3D array of nodes
+    isNode=np.full((stepsX+1,stepsY+1,stepsZ+1), False, np.bool)
+    # and now iterate to find which point is inside the object 'obj'
+    pos_x = bbox.XMin + deltaSideX
+    for step_x in range(0,stepsX+1):
+        pos_y = bbox.YMin + deltaSideY
+        for step_y in range(0,stepsY+1):
+            pos_z = bbox.ZMin + deltaSideZ
+            for step_z in range(0,stepsZ+1):
+                # if the point is inside the object shape, or on the surface, flag it
+                if obj.Shape.isInside(Vector(pos_x,pos_y,pos_z),0.0,True):
+                    isNode[step_x,step_y,step_z] = True
+                pos_z = pos_z + delta
+            pos_y = pos_y + delta
+        pos_x = pos_x + delta
+    return isNode
+    # if we must don't need to stay within the object shape boundaries,
+    # the voxel will overlap the shape contour
+#    nodes=np.full((stepsX+1,stepsY+1,stepsZ+1), None, np.object)
+#    if stayInside == False:
+#        pos_x = bbox.XMin + deltaSideX
+#        for step_x in range(0,stepsX+1):
+#            pos_y = bbox.YMin + deltaSideY
+#            for step_y in range(0,stepsY+1):
+#                pos_z = bbox.ZMin + deltaSideZ
+#                for step_z in range(0,stepsZ+1):
+#                    # if the point is inside the object shape, or on the surface, flag it
+#                    if isNode[step_x,step_y,step_z] == True:
+#                        # create the node
+#                        node = EM_FHNode.makeFHNode(X=pos_x, Y=pos_y, Z=pos_z)
+#                        # store it in the array
+#                        nodes[step_x,step_y,step_z] = node
+#                    pos_z = pos_z + deltaZ
+#                pos_y = pos_y + deltaY
+#            pos_x = pos_x + deltaX  
+#    # if we must stay within the object shape boundaries (within the accuracy
+#    # of the point sampling)
+#    else:
+#        pos_x = bbox.XMin + deltaSideX
+#        for step_x in range(0,stepsX):
+#            pos_y = bbox.YMin + deltaSideY
+#            for step_y in range(0,stepsY):
+#                pos_z = bbox.ZMin + deltaSideZ
+#                for step_z in range(0,stepsZ):
+#                    # if all the eight cube corners are inside the object shape,
+#                    # we consider the center point well inside the object shape, i.e. also
+#                    # for a segment lying on a plane parallel to the plane xy,
+#                    # with width=deltaX, height=deltaY we are within the object
+#                    if (isNode[step_x,step_y,step_z] == True and isNode[step_x+1,step_y,step_z] == True and
+#                        isNode[step_x,step_y+1,step_z] == True and isNode[step_x+1,step_y+1,step_z] == True and
+#                        isNode[step_x,step_y,step_z+1] == True and isNode[step_x+1,step_y,step_z+1] == True and
+#                        isNode[step_x,step_y+1,step_z+1] == True and isNode[step_x+1,step_y+1,step_z+1] == True):
+#                            # create the node
+#                            node = EM_FHNode.makeFHNode(X=pos_x+deltaX/2.0, Y=pos_y+deltaY/2.0, Z=pos_z+deltaZ/2.0)
+#                            # store it in the array
+#                            nodes[step_x,step_y,step_z] = node
+#                    pos_z = pos_z + deltaZ
+#                pos_y = pos_y + deltaY
+#            pos_x = pos_x + deltaX  
+#    # now create the grid of segments
+#    # first along x
+#    for step_z in range(0,stepsZ+1):
+#        for step_y in range(0,stepsY+1):
+#            for step_x in range(0,stepsX):
+#                # if the node and the next are inside the object shape, create the segment
+#                if nodes[step_x,step_y,step_z] <> None and nodes[step_x+1,step_y,step_z] <> None:
+#                    segment = EM_FHSegment.makeFHSegment(nodeStart=nodes[step_x,step_y,step_z],nodeEnd=nodes[step_x+1,step_y,step_z],width=deltaX,height=deltaZ)
+#    # then along y
+#    for step_z in range(0,stepsZ+1):
+#        for step_x in range(0,stepsX+1):
+#            for step_y in range(0,stepsY):
+#                # if the node and the next are inside the object shape, create the segment
+#                if nodes[step_x,step_y,step_z] <> None and nodes[step_x,step_y+1,step_z] <> None:
+#                    segment = EM_FHSegment.makeFHSegment(nodeStart=nodes[step_x,step_y,step_z],nodeEnd=nodes[step_x,step_y+1,step_z],width=deltaY,height=deltaZ)
+#    # finally along z
+#    for step_x in range(0,stepsX+1):
+#        for step_y in range(0,stepsY+1):
+#            for step_z in range(0,stepsZ):
+#                # if the node and the next are inside the object shape, create the segment
+#                if nodes[step_x,step_y,step_z] <> None and nodes[step_x,step_y,step_z+1] <> None:
+#                    segment = EM_FHSegment.makeFHSegment(nodeStart=nodes[step_x,step_y,step_z],nodeEnd=nodes[step_x,step_y,step_z+1],width=deltaX,height=deltaY)
+#
+
+
+#bb = App.BoundBox();
+#
+#objects = App.ActiveDocument.findObjects("Part::Feature")
+#for object in objects:
+#	bb.add( object.Shape.BoundBox )
+#
+#print bb

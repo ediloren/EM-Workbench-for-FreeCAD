@@ -247,7 +247,7 @@ class _ViewProviderFHSolver:
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
-        return os.path.join(iconPath, 'solver_icon.svg')
+        return os.path.join(iconPath, 'EM_FHSolver.svg')
 
     def __getstate__(self):
         return None
@@ -259,7 +259,7 @@ class _CommandFHSolver:
     ''' The EM FastHenry Solver command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'solver_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHSolver.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHSolver","FHSolver"),
                 'Accel': "E, X",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHSolver","Creates a FastHenry Solver object")}

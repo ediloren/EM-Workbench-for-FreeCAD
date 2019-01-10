@@ -56,7 +56,7 @@ else:
 __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
-def makeFHSegment(baseobj=None,nodeStart=None,nodeEnd=None,name='FHSegment'):
+def makeFHSegment(baseobj=None,nodeStart=None,nodeEnd=None,width=None,height=None,name='FHSegment'):
     ''' Creates a FastHenry segment ('E' statement in FastHenry)
     
         'baseobj' is the line object on which the node is based.
@@ -64,6 +64,8 @@ def makeFHSegment(baseobj=None,nodeStart=None,nodeEnd=None,name='FHSegment'):
             'nodeStart' and 'nodeEnd' parameters.
         'nodeStart' is the segment starting node FHNode object
         'nodeEnd' is the segment ending node FHNode object
+        'width' is the segment width
+        'height' is the segment height
         'name' is the name of the object
      
     Example:
@@ -98,6 +100,10 @@ def makeFHSegment(baseobj=None,nodeStart=None,nodeEnd=None,name='FHSegment'):
                 FreeCAD.Console.PrintWarning(translate("EM","FHSegments can only be based on Line objects (not multi-segment wires)"))
         else:
             FreeCAD.Console.PrintWarning(translate("EM","FHSegments can only be based on Line objects"))
+    if width:
+        obj.Width = float(width)            
+    if height:
+        obj.Height = float(height)            
     # hide the base object
     if obj.Base and FreeCAD.GuiUp:
         obj.Base.ViewObject.hide()
@@ -273,7 +279,7 @@ class _ViewProviderFHSegment:
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
-        return os.path.join(iconPath, 'segment_icon.svg')
+        return os.path.join(iconPath, 'EM_FHSegment.svg')
 
     def __getstate__(self):
         return None
@@ -285,7 +291,7 @@ class _CommandFHSegment:
     ''' The EM FastHenry Segment (FHSegment) command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'segment_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHSegment.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHSegment","FHSegment"),
                 'Accel': "E, S",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHSegment","Creates a FastHenry Segment object from scratch, from a selected base object (wire), or from two FHNodes")}

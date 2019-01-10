@@ -71,7 +71,7 @@ def makeFHPlane(baseobj=None,thickness=None,seg1=None,seg2=None,nodes=[],holes=[
             This can be a Part::Box or a Draft::Rectangle.
             If no 'baseobj' is given, the user must assign a base
             object later on, to be able to use this object.
-        'thickness' is a float defining the plane thickness. If not defines,
+        'thickness' is a float defining the plane thickness. If not defined,
             it defaults to EMFHPLANE_DEF_THICKNESS
         'seg1' is an integer defining the number of segments 
             along the x dimension of the plane
@@ -597,7 +597,7 @@ class _ViewProviderFHPlane:
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
-        return os.path.join(iconPath, 'plane_icon.svg')
+        return os.path.join(iconPath, 'EM_FHPlane.svg')
 
     def __getstate__(self):
         return None
@@ -609,7 +609,7 @@ class _CommandFHPlane:
     ''' The EM FastHenry uniform Plane (FHPlane) command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'plane_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHPlane.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPlane","FHPlane"),
                 'Accel': "E, P",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHPlane","Creates a FastHenry uniform Plane object from a selected base object (Part::Box or Draft::Rectangle)")}
@@ -666,7 +666,7 @@ class _CommandFHPlaneAddRemoveNodeHole:
     ''' The EM FastHenry uniform Plane (FHPlane) add, or remove, Node, or Hole, command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'plane_addremovenodehole_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHPlaneAddRemoveNodeHole.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPlaneAddRemoveNodeHole","FHPlaneAddRemoveNodeHole"),
                 'Accel': "E, A",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHPlaneAddRemoveNodeHole","Add/remove FHNodes or FHPlaneHoles to/from a FastHenry uniform Plane object")}

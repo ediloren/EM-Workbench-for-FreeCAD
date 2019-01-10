@@ -115,7 +115,7 @@ class _FHEquiv:
     def assignShape(self, obj):
         ''' Compute and assign the shape to the object 'obj' '''
         n1 = obj.Node1.Proxy.getAbsCoord()
-        n2 = obj.Node1.Proxy.getAbsCoord()
+        n2 = obj.Node2.Proxy.getAbsCoord()
         shape = self.makeEquivShape(n1,n2)
         # shape may be None, e.g. if endpoints coincide. Do not assign in this case.
         # FHEquiv is still valid, but not visible.
@@ -197,7 +197,7 @@ class _ViewProviderFHEquiv:
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
-        return os.path.join(iconPath, 'equiv_icon.svg')
+        return os.path.join(iconPath, 'EM_FHEquiv.svg')
 
     def __getstate__(self):
         return None
@@ -209,7 +209,7 @@ class _CommandFHEquiv:
     ''' The EM FastHenry equivalent node (FHEquiv) command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'equiv_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHEquiv.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHEquiv","FHEquiv"),
                 'Accel': "E, E",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHEquiv","Creates a FastHenry equivalent node object from two FHNodes")}

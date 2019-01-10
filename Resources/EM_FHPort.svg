@@ -15,9 +15,11 @@
    id="svg3074"
    sodipodi:version="0.32"
    inkscape:version="0.91 r13725"
-   sodipodi:docname="port_icon.svg"
+   sodipodi:docname="EM_FHPort.svg"
    inkscape:output_extension="org.inkscape.output.svg.inkscape"
    version="1.1">
+  <title
+     id="title4147">EM Workbench</title>
   <defs
      id="defs3076">
     <linearGradient
@@ -86,19 +88,19 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="8.753976"
-     inkscape:cx="-4.6645085"
-     inkscape:cy="28.675453"
+     inkscape:cx="-23.741554"
+     inkscape:cy="27.704466"
      inkscape:current-layer="layer1"
      showgrid="true"
      inkscape:document-units="px"
      inkscape:grid-bbox="true"
-     inkscape:window-width="1920"
-     inkscape:window-height="1018"
-     inkscape:window-x="-8"
-     inkscape:window-y="-8"
+     inkscape:window-width="725"
+     inkscape:window-height="403"
+     inkscape:window-x="1040"
+     inkscape:window-y="371"
      inkscape:snap-bbox="false"
      inkscape:snap-nodes="true"
-     inkscape:window-maximized="1">
+     inkscape:window-maximized="0">
     <inkscape:grid
        type="xygrid"
        id="grid3038"
@@ -153,18 +155,18 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title>Draft_Upgrade</dc:title>
+        <dc:title>EM Workbench</dc:title>
         <cc:license
            rdf:resource="" />
-        <dc:date>Mon Oct 10 13:44:52 2011 +0000</dc:date>
+        <dc:date>2019/01/10</dc:date>
         <dc:creator>
           <cc:Agent>
-            <dc:title>[wmayer]</dc:title>
+            <dc:title>FreeCAD icon, plus FastFieldSolvers S.R.L. modifications</dc:title>
           </cc:Agent>
         </dc:creator>
         <dc:rights>
           <cc:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
+            <dc:title>LGPL2+</dc:title>
           </cc:Agent>
         </dc:rights>
         <dc:publisher>
@@ -172,20 +174,17 @@
             <dc:title>FreeCAD</dc:title>
           </cc:Agent>
         </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Draft/Resources/icons/Draft_Upgrade.svg</dc:identifier>
-        <dc:relation>http://www.freecadweb.org/wiki/index.php?title=Artwork</dc:relation>
+        <dc:identifier></dc:identifier>
+        <dc:relation>https://www.freecadweb.org/wiki/Artwork_Guidelines</dc:relation>
         <dc:contributor>
           <cc:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
+            <dc:title></dc:title>
           </cc:Agent>
         </dc:contributor>
         <dc:subject>
-          <rdf:Bag>
-            <rdf:li>arrow</rdf:li>
-            <rdf:li>up</rdf:li>
-          </rdf:Bag>
+          <rdf:Bag />
         </dc:subject>
-        <dc:description>A large blue arrow pointing upwards</dc:description>
+        <dc:description></dc:description>
       </cc:Work>
     </rdf:RDF>
   </metadata>

@@ -145,7 +145,20 @@ class _FHPlaneHole:
         if obj.Type == "Point":
             # set the shape as a Vertex at relative position obj.X, obj.Y, obj.Z
             # The shape will then be adjusted according to the object Placement
-            shape = Part.Vertex(self.getRelCoord())
+            ver = FreeCAD.Version()
+            # need to work-around a pesky bug in FreeCAD 0.17(.13541 at the time of writing)
+            # that impacts the save/reload when there is a shape with a single Vertex.
+            # In this case, the .brep file inside the .FCStd file does NOT contain any
+            # placement information. So the object Placement is restored from the
+            # Document.xml but then it is overwritten by the Shape placement that
+            # is then zero. This bug is not affecting FreeCAD version 0.18(.15593 at the time of writing).
+            # As the shape is anyway recreated at recompute() time, the following w/a is valid
+            # also between 0.17 and 0.18.
+            if (int(ver[0])>0) or (int(ver[0])==0 and int(ver[1])>17):
+                shape = Part.Vertex(self.getRelCoord())
+            else:
+                shape1 = Part.Vertex(self.getRelCoord())
+                shape = Part.makeCompound([shape1])
         elif obj.Type == "Rect":
             if obj.Length <= 0 or obj.Width <= 0:
                 FreeCAD.Console.PrintWarning(translate("EM","Cannot create a FHPlaneHole rectangular hole with zero length or width"))
@@ -293,7 +306,7 @@ class _ViewProviderFHPlaneHole:
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
-        return os.path.join(iconPath, 'planehole_icon.svg')
+        return os.path.join(iconPath, 'EM_FHPlaneHole.svg')
 
     def __getstate__(self):
         return None
@@ -305,7 +318,7 @@ class _CommandFHPlaneHole:
     ''' The EM FastHenry conductive plane hole (FHPlaneHole) command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'planehole_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHPlaneHole.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPlaneHole","FHPlaneHole"),
                 'Accel': "E, H",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHPlaneHole","Creates a FastHenry conductive plane Hole object from scratch or from a selected object (point)")}
@@ -325,7 +338,8 @@ class _CommandFHPlaneHole:
                 FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FHPlaneHole"))
                 FreeCADGui.addModule("EM")
                 for selobj in sel:
-                    FreeCADGui.doCommand('obj=EM.makeFHPlaneHole(FreeCAD.ActiveDocument.'+selobj.Object.Name+')')
+                    if Draft.getType(selobj) == "Point":
+                        FreeCADGui.doCommand('obj=EM.makeFHPlaneHole(FreeCAD.ActiveDocument.'+selobj.Object.Name+')')
                 # autogrouping, for later on
                 #FreeCADGui.addModule("Draft")
                 #FreeCADGui.doCommand("Draft.autogroup(obj)")

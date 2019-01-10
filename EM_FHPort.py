@@ -24,8 +24,6 @@
 #*                                                                         *
 #***************************************************************************
 
-
-
 __title__="FreeCAD E.M. Workbench FastHenry Port Class"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
@@ -54,11 +52,11 @@ else:
 __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
-def makeFHPort(nodeStart=None,nodeEnd=None,name='FHPort'):
+def makeFHPort(nodePos=None,nodeNeg=None,name='FHPort'):
     ''' Creates a FastHenry port ('.external' statement in FastHenry)
     
-        'nodeStart' is the positive node FHNode object
-        'nodeEnd' is the negative node FHNode object
+        'nodePos' is the positive node FHNode object
+        'nodeNeg' is the negative node FHNode object
         'name' is the name of the object
         
     Example:
@@ -73,14 +71,14 @@ def makeFHPort(nodeStart=None,nodeEnd=None,name='FHPort'):
     if FreeCAD.GuiUp:
         _ViewProviderFHPort(obj.ViewObject)
         # set base ViewObject properties to user-selected values (if any)
-    # check if 'nodeStart' is a FHNode, and if so, assign it as port start (positive) node
-    if nodeStart:
-        if Draft.getType(nodeStart) == "FHNode":
-            obj.NodeStart = nodeStart
-    # check if 'nodeEnd' is a FHNode, and if so, assign it as port end (negative) node
-    if nodeEnd:
-        if Draft.getType(nodeEnd) == "FHNode":
-            obj.NodeEnd = nodeEnd            
+    # check if 'nodePos' is a FHNode, and if so, assign it as port start (positive) node
+    if nodePos:
+        if Draft.getType(nodePos) == "FHNode":
+            obj.NodePos = nodePos
+    # check if 'nodeNeg' is a FHNode, and if so, assign it as port end (negative) node
+    if nodeNeg:
+        if Draft.getType(nodeNeg) == "FHNode":
+            obj.NodeNeg = nodeNeg            
     # return the newly created Python object
     return obj
 
@@ -88,8 +86,8 @@ class _FHPort:
     '''The EM FastHenry Port object'''
     def __init__(self, obj):
         ''' Add properties '''
-        obj.addProperty("App::PropertyLink","NodeStart","EM",QT_TRANSLATE_NOOP("App::Property","Starting FHNode"))
-        obj.addProperty("App::PropertyLink","NodeEnd","EM",QT_TRANSLATE_NOOP("App::Property","Ending FHNode"))
+        obj.addProperty("App::PropertyLink","NodePos","EM",QT_TRANSLATE_NOOP("App::Property","Positive FHNode"))
+        obj.addProperty("App::PropertyLink","NodeNeg","EM",QT_TRANSLATE_NOOP("App::Property","Negative FHNode"))
         obj.Proxy = self
         self.Type = "FHPort"
         # save the object in the class, to store or retrieve specific data from it
@@ -99,26 +97,26 @@ class _FHPort:
     def execute(self, obj):
         ''' this method is mandatory. It is called on Document.recompute() 
     '''
-        if obj.NodeStart == None:
+        if obj.NodePos == None:
             return
-        elif Draft.getType(obj.NodeStart) <> "FHNode":
-            FreeCAD.Console.PrintWarning(translate("EM","NodeStart is not a FHNode"))
+        elif Draft.getType(obj.NodePos) <> "FHNode":
+            FreeCAD.Console.PrintWarning(translate("EM","NodePos is not a FHNode"))
             return
-        if obj.NodeEnd == None:
+        if obj.NodeNeg == None:
             return
-        elif Draft.getType(obj.NodeEnd) <> "FHNode":
-            FreeCAD.Console.PrintWarning(translate("EM","NodeEnd is not a FHNode"))
+        elif Draft.getType(obj.NodeNeg) <> "FHNode":
+            FreeCAD.Console.PrintWarning(translate("EM","NodeNeg is not a FHNode"))
             return
-        if obj.NodeStart == obj.NodeEnd:
-            FreeCAD.Console.PrintWarning(translate("EM","NodeStart and NodeEnd coincide. Cannot create a port."))
+        if obj.NodePos == obj.NodeNeg:
+            FreeCAD.Console.PrintWarning(translate("EM","NodePos and NodeNeg coincide. Cannot create a port."))
             return            
         # and finally, if everything is ok, make and assign the shape
         self.assignShape(obj)    
 
     def assignShape(self, obj):
         ''' Compute and assign the shape to the object 'obj' '''
-        n1 = obj.NodeStart.Proxy.getAbsCoord()
-        n2 = obj.NodeEnd.Proxy.getAbsCoord()
+        n1 = obj.NodePos.Proxy.getAbsCoord()
+        n2 = obj.NodeNeg.Proxy.getAbsCoord()
         shape = self.makePortShape(n1,n2)
         # shape may be None, e.g. if endpoints coincide. Do not assign in this case.
         # Port is still valid, but not visible.
@@ -161,7 +159,7 @@ class _FHPort:
     def serialize(self,fid):
         ''' Serialize the object to the 'fid' file descriptor
     '''
-        fid.write(".external N" + self.Object.NodeStart.Label + " N" + self.Object.NodeEnd.Label + "\n")
+        fid.write(".external N" + self.Object.NodePos.Label + " N" + self.Object.NodeNeg.Label + "\n")
 
     def __getstate__(self):
         return self.Type
@@ -201,17 +199,17 @@ class _ViewProviderFHPort:
         ''' Used to place other objects as childrens in the tree'''
         c = []
         if hasattr(self,"Object"):
-            if hasattr(self.Object,"NodeStart"):
-                c.append(self.Object.NodeStart)
-            if hasattr(self.Object,"NodeEnd"):
-                c.append(self.Object.NodeEnd)
+            if hasattr(self.Object,"NodePos"):
+                c.append(self.Object.NodePos)
+            if hasattr(self.Object,"NodeNeg"):
+                c.append(self.Object.NodeNeg)
         return c
 
     def getIcon(self):
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
          '''
-        return os.path.join(iconPath, 'port_icon.svg')
+        return os.path.join(iconPath, 'EM_FHPort.svg')
 
     def __getstate__(self):
         return None
@@ -223,7 +221,7 @@ class _CommandFHPort:
     ''' The EM FastHenry Port (FHPort) command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'port_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHPort.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPort","FHPort"),
                 'Accel': "E, P",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHPort","Creates a FastHenry Port object from two FHNodes")}
@@ -251,7 +249,7 @@ class _CommandFHPort:
         if startNode <> None and endNode <> None:
             FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FHPort"))
             FreeCADGui.addModule("EM")
-            FreeCADGui.doCommand('obj=EM.makeFHPort(nodeStart=FreeCAD.ActiveDocument.'+startNode.Name+',nodeEnd=FreeCAD.ActiveDocument.'+endNode.Name+')')
+            FreeCADGui.doCommand('obj=EM.makeFHPort(nodePos=FreeCAD.ActiveDocument.'+startNode.Name+',nodeNeg=FreeCAD.ActiveDocument.'+endNode.Name+')')
             # autogrouping, for later on
             #FreeCADGui.addModule("Draft")
             #FreeCADGui.doCommand("Draft.autogroup(obj)")

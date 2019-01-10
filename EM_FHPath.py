@@ -424,7 +424,7 @@ class _ViewProviderFHPath:
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
-        return os.path.join(iconPath, 'path_icon.svg')
+        return os.path.join(iconPath, 'EM_FHPath.svg')
 
     def __getstate__(self):
         return None
@@ -436,7 +436,7 @@ class _CommandFHPath:
     ''' The EM FastHenry Path (FHPath) command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'path_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHPath.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPath","FHPath"),
                 'Accel': "E, T",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHPath","Creates a Path object (set of connected FastHenry segments) from a selected base object (sketch, wire or any shape containing edges)")}

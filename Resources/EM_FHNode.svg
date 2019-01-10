@@ -10,14 +10,28 @@
    xmlns:xlink="http://www.w3.org/1999/xlink"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   width="64px"
-   height="64px"
-   id="svg2816"
-   version="1.1"
+   sodipodi:docname="EM_FHNode.svg"
    inkscape:version="0.91 r13725"
-   sodipodi:docname="planehole_icon.svg">
+   version="1.1"
+   id="svg2816"
+   height="64px"
+   width="64px">
+  <title
+     id="title4197">EM Workbench</title>
   <defs
      id="defs2818">
+    <linearGradient
+       inkscape:collect="always"
+       id="linearGradient4721">
+      <stop
+         style="stop-color:#ef2929;stop-opacity:1"
+         offset="0"
+         id="stop4723" />
+      <stop
+         style="stop-color:#cc0000;stop-opacity:1"
+         offset="1"
+         id="stop4725" />
+    </linearGradient>
     <linearGradient
        inkscape:collect="always"
        id="linearGradient3789">
@@ -44,10 +58,10 @@
     </linearGradient>
     <inkscape:perspective
        sodipodi:type="inkscape:persp3d"
-       inkscape:vp_x="-441.94317 : 279.20114 : 1"
-       inkscape:vp_y="0 : 1000 : 0"
-       inkscape:vp_z="484.34212 : 327.67408 : 1"
-       inkscape:persp3d-origin="27.804607 : 23.541435 : 1"
+       inkscape:vp_x="-576.62397 : 353.91041 : 1"
+       inkscape:vp_y="0 : 1312.2305 : 0"
+       inkscape:vp_z="612.8902 : 417.51808 : 1"
+       inkscape:persp3d-origin="26.615276 : 18.425936 : 1"
        id="perspective2824" />
     <inkscape:perspective
        id="perspective3622"
@@ -342,41 +356,54 @@
          id="stop2273-87"
          style="stop-color:#000000;stop-opacity:0;" />
     </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient4721"
+       id="linearGradient4727"
+       x1="20.094257"
+       y1="20.15938"
+       x2="43.898911"
+       y2="43.14035"
+       gradientUnits="userSpaceOnUse" />
   </defs>
   <sodipodi:namedview
-     id="base"
-     pagecolor="#ffffff"
-     bordercolor="#666666"
-     borderopacity="1.0"
-     inkscape:pageopacity="0.0"
-     inkscape:pageshadow="2"
-     inkscape:zoom="4.5287771"
-     inkscape:cx="13.493907"
-     inkscape:cy="22.064998"
-     inkscape:current-layer="layer1"
-     showgrid="true"
-     inkscape:document-units="px"
-     inkscape:grid-bbox="true"
-     inkscape:snap-bbox="true"
-     inkscape:bbox-paths="true"
-     inkscape:bbox-nodes="true"
-     inkscape:snap-bbox-edge-midpoints="true"
-     inkscape:snap-bbox-midpoints="true"
-     inkscape:object-paths="true"
+     inkscape:snap-to-guides="false"
+     inkscape:snap-nodes="false"
+     inkscape:snap-global="true"
+     inkscape:window-maximized="0"
+     inkscape:window-y="424"
+     inkscape:window-x="947"
+     inkscape:window-height="403"
+     inkscape:window-width="725"
      inkscape:object-nodes="true"
-     inkscape:window-width="1920"
-     inkscape:window-height="1018"
-     inkscape:window-x="-8"
-     inkscape:window-y="-8"
-     inkscape:window-maximized="1"
-     inkscape:snap-global="false">
+     inkscape:object-paths="true"
+     inkscape:snap-bbox-midpoints="true"
+     inkscape:snap-bbox-edge-midpoints="true"
+     inkscape:bbox-nodes="true"
+     inkscape:bbox-paths="true"
+     inkscape:snap-bbox="false"
+     inkscape:grid-bbox="true"
+     inkscape:document-units="px"
+     showgrid="true"
+     inkscape:current-layer="layer1"
+     inkscape:cy="21.956778"
+     inkscape:cx="-75.863067"
+     inkscape:zoom="5.6568543"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     borderopacity="1.0"
+     bordercolor="#666666"
+     pagecolor="#ffffff"
+     id="base">
     <inkscape:grid
        type="xygrid"
        id="grid3005"
        empspacing="2"
        visible="true"
        enabled="true"
-       snapvisiblegridlinesonly="true" />
+       snapvisiblegridlinesonly="true"
+       spacingx="1"
+       spacingy="1" />
   </sodipodi:namedview>
   <metadata
      id="metadata2821">
@@ -386,30 +413,29 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title />
+        <dc:title>EM Workbench</dc:title>
         <dc:creator>
           <cc:Agent>
-            <dc:title>[triplus]</dc:title>
+            <dc:title>FastFieldSolvers S.R.L.</dc:title>
           </cc:Agent>
         </dc:creator>
-        <dc:title>ArchWorkbench</dc:title>
-        <dc:date>2016-02-26</dc:date>
-        <dc:relation>http://www.freecadweb.org/wiki/index.php?title=Artwork</dc:relation>
+        <dc:date>2019/01/10</dc:date>
+        <dc:relation>https://www.freecadweb.org/wiki/Artwork_Guidelines</dc:relation>
         <dc:publisher>
           <cc:Agent>
             <dc:title>FreeCAD</dc:title>
           </cc:Agent>
         </dc:publisher>
-        <dc:identifier>FreeCAD/src/Mod/Arch/Resources/icons/ArchWorkbench.svg</dc:identifier>
+        <dc:identifier></dc:identifier>
         <dc:rights>
           <cc:Agent>
-            <dc:title>FreeCAD LGPL2+</dc:title>
+            <dc:title>LGPL2+</dc:title>
           </cc:Agent>
         </dc:rights>
         <cc:license>https://www.gnu.org/copyleft/lesser.html</cc:license>
         <dc:contributor>
           <cc:Agent>
-            <dc:title>[agryson] Alexander Gryson</dc:title>
+            <dc:title></dc:title>
           </cc:Agent>
         </dc:contributor>
       </cc:Work>
@@ -419,12 +445,19 @@
      id="layer1"
      inkscape:label="Layer 1"
      inkscape:groupmode="layer">
-    <ellipse
-       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:1.60000002;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       id="path4199"
-       cx="33.121525"
-       cy="30.878477"
-       rx="22.964256"
-       ry="11.482128" />
+    <rect
+       style="fill:url(#linearGradient4727);fill-opacity:1;stroke:#280000;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect4711"
+       width="26.754402"
+       height="26.047295"
+       x="18.619383"
+       y="18.802994" />
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#ef2929;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect4729"
+       width="23.511303"
+       height="22.627417"
+       x="20.329319"
+       y="20.689711" />
   </g>
 </svg>

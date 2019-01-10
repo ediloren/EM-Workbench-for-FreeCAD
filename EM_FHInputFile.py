@@ -49,7 +49,7 @@ else:
 __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
-def makeFHInputFile(doc=None,filename=None,folder=None):
+def createFHInputFile(doc=None,filename=None,folder=None):
     '''Outputs a FastHenry input file based on the active document geometry
     
        'doc' is the Document object that must contain at least one 
@@ -57,7 +57,7 @@ def makeFHInputFile(doc=None,filename=None,folder=None):
             If no 'doc' is given, the active document is used, if any.
        'filename' is the filename to use. If not passed as an argument,
             the 'Filename' property of the FHSolver object contained in the document
-            will be used. If the 'Filename" string in the FHSolver object is empty,
+            will be used. If the "Filename" string in the FHSolver object is empty,
             the function builds a filename concatenating the document name
             with the default extension EMFHSOLVER_DEF_FILENAME.
             Whatever the name, if a file with the same name exists in the target
@@ -65,12 +65,12 @@ def makeFHInputFile(doc=None,filename=None,folder=None):
         'folder' is the folder where the file will be stored. If not passed
             as an argument, the 'Folder' property of the FHSolver object
             contained in the document will be used. If the 'Folder' string
-            in the FHSolver object is empty, the vunction defaults to the
+            in the FHSolver object is empty, the function defaults to the
             user's home path (e.g. in Windows "C:\Documents and Settings\
             username\My Documents", in Linux "/home/username")
     
     Example:
-         makeFHInputFile()
+         createFHInputFile()
 '''
     if not doc:
         doc = App.ActiveDocument
@@ -170,7 +170,7 @@ class _CommandFHInputFile:
     ''' The EM FastHenry create input file command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'inputfile_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHInputFile.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHInputFile","FHInputFile"),
                 'Accel': "E, I",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHInputFile","Creates a FastHenry input file")}
@@ -184,7 +184,7 @@ class _CommandFHInputFile:
         #self.Width = p.GetFloat("Width",200)
         FreeCAD.ActiveDocument.openTransaction(translate("EM","Create a FastHenry file"))
         FreeCADGui.addModule("EM")
-        FreeCADGui.doCommand('obj=EM.makeFHInputFile(App.ActiveDocument)')
+        FreeCADGui.doCommand('obj=EM.createFHInputFile(App.ActiveDocument)')
         FreeCAD.ActiveDocument.commitTransaction()
         FreeCAD.ActiveDocument.recompute()
 

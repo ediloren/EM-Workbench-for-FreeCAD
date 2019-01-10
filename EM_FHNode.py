@@ -120,8 +120,34 @@ class _FHNode:
         #FreeCAD.Console.PrintWarning("_FHNode execute\n") #debug
         # set the shape as a Vertex at relative position obj.X, obj.Y, obj.Z
         # The vertex will then be adjusted according to the FHNode Placement
-        obj.Shape = Part.Vertex(self.getRelCoord())
+        ver = FreeCAD.Version()
+        # need to work-around a pesky bug in FreeCAD 0.17(.13541 at the time of writing)
+        # that impacts the save/reload when there is a shape with a single Vertex.
+        # In this case, the .brep file inside the .FCStd file does NOT contain any
+        # placement information. So the object Placement is restored from the
+        # Document.xml but then it is overwritten by the Shape placement that
+        # is then zero. This bug is not affecting FreeCAD version 0.18(.15593 at the time of writing).
+        # As the shape is anyway recreated at recompute() time, the following w/a is valid
+        # also between 0.17 and 0.18.
+        if (int(ver[0])>0) or (int(ver[0])==0 and int(ver[1])>17):
+            shape = Part.Vertex(self.getRelCoord())
+        else:
+            shape1 = Part.Vertex(self.getRelCoord())
+            shape = Part.makeCompound([shape1])
+        obj.Shape = shape
         #FreeCAD.Console.PrintWarning("_FHNode execute ends\n") #debug
+        
+# debug
+#
+#    def onBeforeChange(self, obj, prop):
+#        ''' take action before the 'obj' object 'prop' will change
+#    '''
+#        # save current list of nodes and holes, before the change,
+#        # to be able to see which nodes/holes have been added or removed
+#        if prop == "Placement": # debug
+#            FreeCAD.Console.PrintWarning("_FHNode onBeforeChange Placememnt: " + str(obj.Placement)+")\n") #debug
+#
+# debug
         
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
@@ -131,7 +157,9 @@ class _FHNode:
             # on restore, self.Object is not there anymore (JSON does not serialize complex objects
             # members of the class, so __getstate__() and __setstate__() skip them);
             # so we must "re-attach" (re-create) the 'self.Object'
-            self.Object = obj           
+            self.Object = obj
+        #if prop == "Placement": # debug
+            #FreeCAD.Console.PrintWarning("_FHNode Placememnt: " + str(obj.Placement)+")\n") #debug
         #FreeCAD.Console.PrintWarning("_FHNode onChanged(" + str(prop)+") ends\n") #debug
 
     def serialize(self,fid,extension=""):
@@ -244,7 +272,7 @@ class _ViewProviderFHNode:
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
         '''
-        return os.path.join(iconPath, 'node_icon.svg')
+        return os.path.join(iconPath, 'EM_FHNode.svg')
 
     def __getstate__(self):
         return None
@@ -256,7 +284,7 @@ class _CommandFHNode:
     ''' The EM FastHenry Node (FHNode) command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'node_icon.svg') ,
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHNode.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHNode","FHNode"),
                 'Accel': "E, N",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHNode","Creates a FastHenry Node object from scratch or from a selected object (point)")}
@@ -276,7 +304,8 @@ class _CommandFHNode:
                 FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FHNode"))
                 FreeCADGui.addModule("EM")
                 for selobj in sel:
-                    FreeCADGui.doCommand('obj=EM.makeFHNode(FreeCAD.ActiveDocument.'+selobj.Object.Name+')')
+                    if Draft.getType(selobj) == "Point":
+                        FreeCADGui.doCommand('obj=EM.makeFHNode(FreeCAD.ActiveDocument.'+selobj.Object.Name+')')
                 # autogrouping, for later on
                 #FreeCADGui.addModule("Draft")
                 #FreeCADGui.doCommand("Draft.autogroup(obj)")
