@@ -488,6 +488,15 @@ def onStart():
         tb.orientationChanged.connect(onOrientationChanged)
 
 
+def onPreStart():
+    """Improve start reliability and maintain FreeCAD 0.16 support."""
+    if App.Version()[1] < "17":
+        onStart()
+    else:
+        if mw.property("eventLoop"):
+            onStart()
+
+
 t = QtCore.QTimer()
-t.timeout.connect(onStart)
+t.timeout.connect(onPreStart)
 t.start(500)
