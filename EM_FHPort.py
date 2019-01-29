@@ -31,7 +31,7 @@ __url__ = "http://www.fastfieldsolvers.com"
 # defines
 #
 # tolerance in distance between nodes to define a port
-EMFHPORT_LENTOL = 1e-12
+EMFHPORT_LENTOL = 1e-8
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
 from FreeCAD import Vector

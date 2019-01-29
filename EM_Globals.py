@@ -38,7 +38,7 @@ EMFHNODE_DEF_NODECOLOR = (1.0,0.0,0.0)
 # tolerance in degrees when verifying if vectors are parallel
 EMFHSEGMENT_PARTOL = 0.01
 # tolerance in length
-EMFHSEGMENT_LENTOL = 1e-12
+EMFHSEGMENT_LENTOL = 1e-8
 
 import FreeCAD, Part
 from FreeCAD import Vector

@@ -296,6 +296,9 @@ class _CommandFHNode:
         # get the selected object(s)
         sel = FreeCADGui.Selection.getSelectionEx()
         done = False
+        # set continue mode to false, as default (continue or not to place FHNodes
+        # without the need to press again the FHNode button)
+        self.continueCmd = False
         # if selection is not empty
         if sel:
             # automatic mode
@@ -304,7 +307,7 @@ class _CommandFHNode:
                 FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FHNode"))
                 FreeCADGui.addModule("EM")
                 for selobj in sel:
-                    if Draft.getType(selobj) == "Point":
+                    if Draft.getType(selobj.Object) == "Point":
                         FreeCADGui.doCommand('obj=EM.makeFHNode(FreeCAD.ActiveDocument.'+selobj.Object.Name+')')
                 # autogrouping, for later on
                 #FreeCADGui.addModule("Draft")
@@ -316,7 +319,7 @@ class _CommandFHNode:
         if not done:
             FreeCAD.DraftWorkingPlane.setup()
             # get a 3D point via Snapper, setting the callback functions
-            FreeCADGui.Snapper.getPoint(callback=self.getPoint,movecallback=self.move)
+            FreeCADGui.Snapper.getPoint(callback=self.getPoint,movecallback=self.move,extradlg=self.taskbox())
 
     def getPoint(self,point=None,obj=None):
         '''This function is called by the Snapper when it has a 3D point'''
@@ -328,9 +331,9 @@ class _CommandFHNode:
         FreeCADGui.doCommand('obj=EM.makeFHNode(X='+str(coord.x)+',Y='+str(coord.y)+',Z='+str(coord.z)+')')
         FreeCAD.ActiveDocument.commitTransaction()
         FreeCAD.ActiveDocument.recompute()
-        # might improve in the future with continue command
-        #if self.continueCmd:
-        #    self.Activated()
+        # handle continue command
+        if self.continueCmd:
+            self.Activated()
 
     # this is used to display the global point position information
     # in the Snapper user interface. By default it would display the relative
@@ -339,6 +342,31 @@ class _CommandFHNode:
     def move(self,point=None,snapInfo=None):
         if FreeCADGui.Snapper.ui:
             FreeCADGui.Snapper.ui.displayPoint(point)
+
+    def taskbox(self):
+        "sets up a taskbox widget"
+        w = QtGui.QWidget()
+        ui = FreeCADGui.UiLoader()
+        w.setWindowTitle(translate("EM","FHNode options", utf8_decode=True))
+        grid = QtGui.QGridLayout(w)
+
+        label4 = QtGui.QLabel(translate("EM","Con&tinue", utf8_decode=True))
+        value4 = QtGui.QCheckBox()
+        value4.setObjectName("ContinueCmd")
+        value4.setLayoutDirection(QtCore.Qt.RightToLeft)
+        label4.setBuddy(value4)
+        if hasattr(FreeCADGui,"draftToolBar"):
+            value4.setChecked(FreeCADGui.draftToolBar.continueMode)
+            self.continueCmd = FreeCADGui.draftToolBar.continueMode
+        grid.addWidget(label4,1,0,1,1)
+        grid.addWidget(value4,1,1,1,1)
+        QtCore.QObject.connect(value4,QtCore.SIGNAL("stateChanged(int)"),self.setContinue)
+        return w
+
+    def setContinue(self,i):
+        self.continueCmd = bool(i)
+        if hasattr(FreeCADGui,"draftToolBar"):
+            FreeCADGui.draftToolBar.continueMode = bool(i)
             
 if FreeCAD.GuiUp:
     FreeCADGui.addCommand('EM_FHNode',_CommandFHNode())

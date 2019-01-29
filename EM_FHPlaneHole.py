@@ -338,7 +338,7 @@ class _CommandFHPlaneHole:
                 FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FHPlaneHole"))
                 FreeCADGui.addModule("EM")
                 for selobj in sel:
-                    if Draft.getType(selobj) == "Point":
+                    if Draft.getType(selobj.Object) == "Point":
                         FreeCADGui.doCommand('obj=EM.makeFHPlaneHole(FreeCAD.ActiveDocument.'+selobj.Object.Name+')')
                 # autogrouping, for later on
                 #FreeCADGui.addModule("Draft")
