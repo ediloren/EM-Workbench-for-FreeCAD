@@ -120,6 +120,11 @@ class _FHPath:
         obj.addProperty("App::PropertyInteger","nwinc","EM",QT_TRANSLATE_NOOP("App::Property","Number of filaments in the width direction ('nwinc' segment parameter)"))
         obj.addProperty("App::PropertyInteger","rh","EM",QT_TRANSLATE_NOOP("App::Property","Ratio of adjacent filaments in the height direction ('rh' segment parameter)"))
         obj.addProperty("App::PropertyInteger","rw","EM",QT_TRANSLATE_NOOP("App::Property","Ratio of adjacent filaments in the width direction ('rw' segment parameter)"))
+        # Setting the Nodes property to read-only. The user should not directly handle this.
+        #0 -- default mode, read and write
+        #1 -- read-only
+        #2 -- hidden
+        obj.setEditorMode("Nodes", 1)
         obj.Proxy = self
         self.Type = "FHPath"
         obj.Discr = EMFHPATH_DEF_DISCR
