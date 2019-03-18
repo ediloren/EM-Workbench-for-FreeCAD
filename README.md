@@ -21,4 +21,4 @@ Windows:
 
 ### Usage:
 
-Selector toolbar provides a point and click experience for changing FreeCAD workbenches. Preferences can be located in menu bar under Tools -> Accessories -> Selector toolbar.
+Selector toolbar provides a point and click experience for changing FreeCAD workbenches. Preferences can be located in menu bar under Accessories -> Selector toolbar.
