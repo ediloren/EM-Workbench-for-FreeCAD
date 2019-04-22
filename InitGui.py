@@ -42,8 +42,11 @@ class EMWorkbench(Workbench):
         # import the EM module (and therefore all commands makeXXX)
         import EM
         # E.M. tools
+        self.emtools = ["EM_About"]
         self.emfhtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPath", "EM_FHPlane",
                 "EM_FHPlaneHole", "EM_FHPlaneAddRemoveNodeHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile"]
+        #self.emvhtools = ["EM_VHSolver"]
+        self.emvhtools = []
         # draft tools
         # setup menus
         self.draftcmdList = ["Draft_Line","Draft_Rectangle"]
@@ -59,10 +62,11 @@ class EMWorkbench(Workbench):
                          'Draft_Snap_Dimensions','Draft_Snap_WorkingPlane']
 
         def QT_TRANSLATE_NOOP(scope, text): return text
-        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. tools"),self.emfhtools)
+        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. FastHenry tools"),self.emfhtools)
+        #self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. VoxHenry tools"),self.emvhtools)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft creation tools"),self.draftcmdList)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft mod tools"),self.draftmodtools)
-        self.appendMenu(QT_TRANSLATE_NOOP("EM","&EM"),self.emfhtools)
+        self.appendMenu(QT_TRANSLATE_NOOP("EM","&EM"),self.emfhtools + self.emvhtools + self.emtools)
         self.appendMenu(QT_TRANSLATE_NOOP("EM","&Draft"),self.draftcmdList+self.draftmodtools+self.treecmdList)
         self.appendMenu([QT_TRANSLATE_NOOP("EM","&Draft"),QT_TRANSLATE_NOOP("arch","Snapping")],self.snapList)
         #FreeCADGui.addIconPath(":/icons")

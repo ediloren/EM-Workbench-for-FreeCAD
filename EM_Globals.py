@@ -33,6 +33,8 @@ from FreeCAD import Vector
 
 # defines
 #
+# version information
+EM_VERSION = '1.0.1'
 # default node color
 EMFHNODE_DEF_NODECOLOR = (1.0,0.0,0.0)
 # tolerance in degrees when verifying if vectors are parallel

@@ -87,8 +87,8 @@ def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmi
         'ndec' is the float value defining how many frequency points per decade
             will be simulated
         'folder' is the folder into which the FastHenry file will be saved.
-            Defaults to the user's home path (e.g. in Windows "C:\Documents
-             and Settings\username\My Documents", in Linux "/home/username")
+            Defaults to the user's home path (e.g. in Windows "C:\\Documents
+             and Settings\\username\\My Documents", in Linux "/home/username")
         'filename' is the name of the file that will be exported.
             Defaults to EMFHSOLVER_DEF_FILENAME
         'name' is the name of the object
@@ -98,7 +98,7 @@ def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmi
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
     # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _FHSegment 
+    #'obj' (e.g. 'Base' property) making it a _FHSolver 
     _FHSolver(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:

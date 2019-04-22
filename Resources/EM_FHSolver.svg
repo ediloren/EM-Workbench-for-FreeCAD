@@ -91,6 +91,45 @@
        y1="7.794034"
        x2="47.247158"
        y2="52.521305"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="matrix(1.1846386,0,0,1.1846386,-9.501508,-5.4148589)" />
+    <linearGradient
+       gradientTransform="translate(9.9161935,2.2059659)"
+       inkscape:collect="always"
+       xlink:href="#linearGradient4150"
+       id="linearGradient4148-7"
+       x1="16.556818"
+       y1="7.794034"
+       x2="47.247158"
+       y2="52.521305"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient4150"
+       id="linearGradient4159"
+       x1="16.556818"
+       y1="7.794034"
+       x2="47.247158"
+       y2="52.521305"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       gradientTransform="matrix(0.50862782,0,0,0.50862782,15.408648,27.042116)"
+       inkscape:collect="always"
+       xlink:href="#linearGradient4150"
+       id="linearGradient4148-5"
+       x1="16.556818"
+       y1="7.794034"
+       x2="47.247158"
+       y2="52.521305"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient4150"
+       id="linearGradient4172"
+       x1="16.556818"
+       y1="7.794034"
+       x2="47.247158"
+       y2="52.521305"
        gradientUnits="userSpaceOnUse" />
   </defs>
   <sodipodi:namedview
@@ -101,17 +140,31 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="5.5"
-     inkscape:cx="-82.818182"
-     inkscape:cy="26.181817"
+     inkscape:cx="-22.636364"
+     inkscape:cy="26.215803"
      inkscape:current-layer="layer1"
      showgrid="true"
      inkscape:document-units="px"
      inkscape:grid-bbox="true"
-     inkscape:window-width="725"
-     inkscape:window-height="403"
-     inkscape:window-x="1097"
-     inkscape:window-y="363"
-     inkscape:window-maximized="0" />
+     inkscape:window-width="1920"
+     inkscape:window-height="1018"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:snap-grids="true"
+     showguides="false"
+     inkscape:snap-nodes="true"
+     inkscape:snap-others="true"
+     inkscape:snap-to-guides="false"
+     inkscape:snap-global="true">
+    <inkscape:grid
+       type="xygrid"
+       id="grid4187"
+       spacingx="1"
+       spacingy="1"
+       visible="true"
+       empspacing="2" />
+  </sodipodi:namedview>
   <metadata
      id="metadata2865">
     <rdf:RDF>
@@ -147,15 +200,48 @@
      inkscape:groupmode="layer">
     <text
        xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:64px;line-height:125%;font-family:'DejaVu Serif';-inkscape-font-specification:'DejaVu Serif';letter-spacing:0px;word-spacing:0px;fill:url(#linearGradient4148);fill-opacity:1;stroke:#241c1c;stroke-width:2;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:4.0999999"
-       x="9.272727"
-       y="54"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:75.81687164px;line-height:125%;font-family:Georgia;-inkscape-font-specification:Georgia;letter-spacing:0px;word-spacing:0px;fill:url(#linearGradient4148);fill-opacity:1;stroke:#241c1c;stroke-width:2.918185;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:4.0999999"
+       x="1.483322"
+       y="58.55563"
        id="text3014"
-       sodipodi:linespacing="125%"><tspan
+       sodipodi:linespacing="125%"
+       transform="scale(1.0619928,0.94162596)"><tspan
          sodipodi:role="line"
          id="tspan3016"
-         x="9.272727"
-         y="54"
-         style="fill-opacity:1;fill:url(#linearGradient4148)">S</tspan></text>
+         x="1.483322"
+         y="58.55563"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Georgia;-inkscape-font-specification:Georgia;fill:url(#linearGradient4148);fill-opacity:1;stroke-width:2.918185;stroke-miterlimit:4;stroke-dasharray:none">S</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:64px;line-height:125%;font-family:'DejaVu Serif';-inkscape-font-specification:'DejaVu Serif';letter-spacing:0px;word-spacing:0px;fill:url(#linearGradient4148-7);fill-opacity:1;stroke:#241c1c;stroke-width:2;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:4.0999999"
+       x="19.188921"
+       y="56.205967"
+       id="text3014-3"
+       sodipodi:linespacing="125%"><tspan
+         sodipodi:role="line"
+         id="tspan3016-8"
+         x="19.188921"
+         y="56.205967"
+         style="fill:url(#linearGradient4148-7);fill-opacity:1" /></text>
+    <rect
+       style="fill:#ffffff;fill-opacity:0.85789472;stroke:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+       id="rect4204"
+       width="45.81818"
+       height="32"
+       x="16.181818"
+       y="30" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:32.55217743px;line-height:125%;font-family:Georgia;-inkscape-font-specification:Georgia;letter-spacing:0px;word-spacing:0px;fill:url(#linearGradient4148-5);fill-opacity:1;stroke:#241c1c;stroke-width:2;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:4.0999999"
+       x="20.125015"
+       y="54.508018"
+       id="text3014-6"
+       sodipodi:linespacing="125%"
+       transform="scale(0.91885746,1.0883081)"><tspan
+         sodipodi:role="line"
+         id="tspan3016-1"
+         x="20.125015"
+         y="54.508018"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:Georgia;-inkscape-font-specification:Georgia;fill:url(#linearGradient4148-5);fill-opacity:1;stroke-width:2;stroke-miterlimit:4;stroke-dasharray:none">FH</tspan></text>
   </g>
 </svg>

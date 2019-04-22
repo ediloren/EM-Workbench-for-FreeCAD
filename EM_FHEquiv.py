@@ -101,12 +101,12 @@ class _FHEquiv:
     '''
         if obj.Node1 == None:
             return
-        elif Draft.getType(obj.Node1) <> "FHNode":
+        elif Draft.getType(obj.Node1) != "FHNode":
             FreeCAD.Console.PrintWarning(translate("EM","Node1 is not a FHNode"))
             return
         if obj.Node2 == None:
             return
-        elif Draft.getType(obj.Node2) <> "FHNode":
+        elif Draft.getType(obj.Node2) != "FHNode":
             FreeCAD.Console.PrintWarning(translate("EM","Node2 is not a FHNode"))
             return      
         # and finally, if everything is ok, make and assign the shape

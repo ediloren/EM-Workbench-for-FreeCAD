@@ -180,7 +180,7 @@ def parse_3D_input_file(fileinname, parentFid, parentFilePosMap, isdiel = False,
         
         # build the file map (for single input file)
         ret = create_file_map(fileinname, fid, filePosMap)
-        if ret <> True:
+        if ret != True:
             return ret
             
     panelVertexes = []
@@ -223,14 +223,14 @@ def parse_3D_input_file(fileinname, parentFid, parentFilePosMap, isdiel = False,
                 # conductor name because in the same file called more than once)
                 if m_iParseLevel == 0:
                     localGroupname = "g"
-                else
+                else:
                     localGroupname = groupname
                 localGroupname = localGroupname + str(m_iGroupNum[m_iParseLevel]) + '_'
                 
                 # read optional values
                 if len(splitLine) >= 7:
                     # read optional '+'. If not a '+', increment the group
-                    if splitLine[6] <> '+':
+                    if splitLine[6] != '+':
                         # increase group name
                         m_iGroupNum[m_iParseLevel] = m_iGroupNum[m_iParseLevel] + 1
                     

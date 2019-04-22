@@ -38,12 +38,22 @@ __url__ = "http://www.fastfieldsolvers.com"
 
 '''The E.M. module provides tools for ElectroMagnetic analysis'''
 
+import sys
+
+# Python3 compatibility
+if sys.version_info >= (3, 4):
+    from importlib import reload
+elif sys.version_info >= (3, 0):
+    from imp import reload
+
 import FreeCAD
 if FreeCAD.GuiUp:
 	import FreeCADGui
 	FreeCADGui.updateLocale()
 
 from EM_Globals import *
+from EM_About import *
+# FastHenry specific
 from EM_FHNode import *
 from EM_FHSegment import *
 from EM_FHPath import *
@@ -53,4 +63,43 @@ from EM_FHPort import *
 from EM_FHEquiv import *
 from EM_FHSolver import *
 from EM_FHInputFile import *
+## VoxHenry specific
+#from EM_VHSolver import *
 
+# for debugging
+#import EM_Globals
+#reload(EM_Globals)
+#from EM_Globals import *
+#import EM_About
+#reload(EM_About)
+#from EM_About import *
+#import EM_FHNode
+#reload(EM_FHNode)
+#from EM_FHNode import *
+#import EM_FHSegment
+#reload(EM_FHSegment)
+#from EM_FHSegment import *
+#import EM_FHPath
+#reload(EM_FHPath)
+#from EM_FHPath import *
+#import EM_FHPlaneHole
+#reload(EM_FHPlaneHole)
+#from EM_FHPlaneHole import *
+#import EM_FHPlane
+#reload(EM_FHPlane)
+#from EM_FHPlane import *
+#import EM_FHPort
+#reload(EM_FHPort)
+#from EM_FHPort import *
+#import EM_FHEquiv
+#reload(EM_FHEquiv)
+#from EM_FHEquiv import *
+#import EM_FHSolver
+#reload(EM_FHSolver)
+#from EM_FHSolver import *
+#import EM_FHInputFile
+#reload(EM_FHInputFile)
+#from EM_FHInputFile import *
+#import EM_VHSolver
+#reload(EM_VHSolver)
+#from EM_VHSolver import *

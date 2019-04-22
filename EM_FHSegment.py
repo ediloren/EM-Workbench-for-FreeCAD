@@ -137,12 +137,12 @@ class _FHSegment:
         #FreeCAD.Console.PrintWarning("_FHSegment execute()\n") #debug
         if obj.NodeStart == None:
             return
-        elif Draft.getType(obj.NodeStart) <> "FHNode":
+        elif Draft.getType(obj.NodeStart) != "FHNode":
             FreeCAD.Console.PrintWarning(translate("EM","NodeStart is not a FHNode"))
             return
         if obj.NodeEnd == None:
             return
-        elif Draft.getType(obj.NodeEnd) <> "FHNode":
+        elif Draft.getType(obj.NodeEnd) != "FHNode":
             FreeCAD.Console.PrintWarning(translate("EM","NodeEnd is not a FHNode"))
             return
         # the FHSegment has no Placement in itself:
@@ -154,7 +154,7 @@ class _FHSegment:
         # So let's keep the FHSegment placement at zero, and use the FHNodes to move the segment position.
         # This is also necessary as we should not change the segment cross-section orientation
         # using the Placement, otherwise it will not be relative to the global axis system
-        if obj.Placement <> FreeCAD.Placement():
+        if obj.Placement != FreeCAD.Placement():
             obj.Placement = FreeCAD.Placement()
         # check if we have a 'Base' object; if so, if segment end nodes
         # were already defined, re-set them according to the 'Base' object;
@@ -170,13 +170,13 @@ class _FHSegment:
                     return
                 # ok, it's valid. Let's verify if this is a Wire.
                 if Draft.getType(obj.Base) == "Wire":
-                    if obj.NodeStart <> None:
+                    if obj.NodeStart != None:
                         abs_pos = obj.NodeStart.Proxy.getAbsCoord()
                         # 'obj.Base.Start' is an absolute position
                         # if 'NodeStart' is not in that position, move it
                         if (abs_pos-obj.Base.Start).Length > EMFHSEGMENT_LENTOL:
                             obj.NodeStart.Proxy.setAbsCoord(obj.Base.Start)
-                    if obj.NodeEnd <> None:
+                    if obj.NodeEnd != None:
                         abs_pos = obj.NodeEnd.Proxy.getAbsCoord()
                         # 'obj.Base.Start' is an absolute position
                         # if 'NodeStart' is not in that position, move it
@@ -328,7 +328,7 @@ class _CommandFHSegment:
                     endNode = selobj.Object
                 else:
                     FreeCAD.Console.PrintWarning(translate("EM","More than two FHNodes selected when creating a FHSegment. Using only the first two."))
-        if startNode <> None and endNode <> None:
+        if startNode != None and endNode != None:
             FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FHSegment"))
             FreeCADGui.addModule("EM")
             FreeCADGui.doCommand('obj=EM.makeFHSegment(nodeStart=FreeCAD.ActiveDocument.'+startNode.Name+',nodeEnd=FreeCAD.ActiveDocument.'+endNode.Name+')')

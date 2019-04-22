@@ -99,12 +99,12 @@ class _FHPort:
     '''
         if obj.NodePos == None:
             return
-        elif Draft.getType(obj.NodePos) <> "FHNode":
+        elif Draft.getType(obj.NodePos) != "FHNode":
             FreeCAD.Console.PrintWarning(translate("EM","NodePos is not a FHNode"))
             return
         if obj.NodeNeg == None:
             return
-        elif Draft.getType(obj.NodeNeg) <> "FHNode":
+        elif Draft.getType(obj.NodeNeg) != "FHNode":
             FreeCAD.Console.PrintWarning(translate("EM","NodeNeg is not a FHNode"))
             return
         if obj.NodePos == obj.NodeNeg:
@@ -246,7 +246,7 @@ class _CommandFHPort:
                     endNode = selobj.Object
                 else:
                     FreeCAD.Console.PrintWarning(translate("EM","More than two FHNodes selected when creating a FHPort. Using only the first two."))
-        if startNode <> None and endNode <> None:
+        if startNode != None and endNode != None:
             FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FHPort"))
             FreeCADGui.addModule("EM")
             FreeCADGui.doCommand('obj=EM.makeFHPort(nodePos=FreeCAD.ActiveDocument.'+startNode.Name+',nodeNeg=FreeCAD.ActiveDocument.'+endNode.Name+')')

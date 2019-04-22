@@ -161,7 +161,7 @@ class _FHPath:
         # of the vertexes, and the segments cross-section orientation will be
         # calculated in absolute coordinates from the Positions rotations.
         # This last part is different from FHSegment.
-        if obj.Placement <> FreeCAD.Placement():
+        if obj.Placement != FreeCAD.Placement():
             obj.Placement = FreeCAD.Placement()
         # define nodes and segments
         edges_raw = []

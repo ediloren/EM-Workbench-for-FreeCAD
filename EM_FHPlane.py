@@ -164,8 +164,8 @@ class _FHPlane:
         obj.addProperty("App::PropertyLength","segwid2","EM",QT_TRANSLATE_NOOP("App::Property","Width of segments along the plane width direction ('segwid2' plane parameter)"))
         obj.addProperty("App::PropertyLinkList","Nodes","EM",QT_TRANSLATE_NOOP("App::Property","Nodes for connections to the plane"))
         obj.addProperty("App::PropertyLinkList","Holes","EM",QT_TRANSLATE_NOOP("App::Property","Holes in the plane"))
-        obj.addProperty("App::PropertyBool","FineMesh","Component",QT_TRANSLATE_NOOP("App::Property","Specifies if this the plane fine mesh is shown (i.e. composing segments)"))
-        obj.addProperty("App::PropertyBool","ShowNodes","Component",QT_TRANSLATE_NOOP("App::Property","Show the internal node grid supporting the plane"))
+        obj.addProperty("App::PropertyBool","FineMesh","EM",QT_TRANSLATE_NOOP("App::Property","Specifies if this the plane fine mesh is shown (i.e. composing segments)"))
+        obj.addProperty("App::PropertyBool","ShowNodes","EM",QT_TRANSLATE_NOOP("App::Property","Show the internal node grid supporting the plane"))
         obj.Proxy = self
         self.Type = "FHPlane"
         self.FineMesh = False
@@ -232,7 +232,7 @@ class _FHPlane:
                         obj.segwid2 = segwid2
                         FreeCAD.Console.PrintWarning(translate("EM","Plane segwid2 would cause segments overlap, re-setting segwid2 to the maximum possible"))
                 # if needed, apply the same Placement of the Base object to the FHPlane object
-                if obj.Placement <> obj.Base.Placement:
+                if obj.Placement != obj.Base.Placement:
                     obj.Placement = obj.Base.Placement
                 # Start node and hole repositioning in relative coordinate system of the conductive plane
                 #
@@ -241,14 +241,14 @@ class _FHPlane:
                 # that once a node is child of a plane, it cannot be moved independently by changing
                 # its placement
                 for node in obj.Nodes:
-                    if node.Placement <> obj.Placement:
+                    if node.Placement != obj.Placement:
                         node.Placement = obj.Placement
                 # These holes have already been adopted by the plane, if they are in the obj.Holes list;
                 # therefore, must just make sure they track the plane placement. Also, this assures
                 # that once a hole is child of a plane, it cannot be moved independently by changing
                 # its placement
                 for hole in obj.Holes:
-                    if hole.Placement <> obj.Placement:
+                    if hole.Placement != obj.Placement:
                         hole.Placement = obj.Placement
                 # Check if the user selected a coarse or a fine mesh.
                 if obj.FineMesh == False:

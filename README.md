@@ -4,7 +4,7 @@
 
 ### FastHenry support
 
-Copyright (c) 2018
+Copyright (c) 2019
 Efficient Power Conversion Corporation, Inc.  http://epc-co.com
 
 Developed by FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com under contract by EPC
@@ -12,7 +12,7 @@ Developed by FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com under cont
 
 ### FasterCap and FastCap support
 
-Copyright (c) 2018
+Copyright (c) 2019
 FastFieldSolvers S.R.L. http://www.fastfieldsolvers.com
 
 ## Description
@@ -25,14 +25,25 @@ At present, the workbench supports:
 - [FastHenry](https://www.fastfieldsolvers.com/fasthenry2.htm) inductance solver: ongoing development including GUI support
 - [FasterCap](https://www.fastfieldsolvers.com/fastercap.htm) capacitance solver: ongoing development, today at the stage of Python macro only, for creating an input file
 
+## Version
+
+The current version of the ElectroMagnetic workbench can be shown, once installed, from the **EM** menu, selecting **About**.
+
+The version number is also reported in the sources, in the global variable **EM_VERSION** in the file EM_Globals.py.
 
 ## Installing
 
-The ElectroMagnetic workbench is managed as a FreeCAD addon. This addon can be downloaded by clicking the **Download ZIP** button found on top of the page, or using **Git**. The addon must be placed in your user's FreeCAD/Mod folder. 
+The ElectroMagnetic workbench is managed as a FreeCAD addon. It can be installed from within FreeCAD using the add-ons manager under the <b>Tools</b> menu, see the [FreeCAD add-on documentation](https://www.freecadweb.org/wiki/Std_AddonMgr) for more specific instructions
+
+### Manual installation
+
+This addon can also be manually installed, but this method is not recommended, as the add-ons manager provides a more user friendly experience.
+
+If you still wish to manually install the workbench, you can download it by clicking the **Download ZIP** button found on top of the page, or using **Git**. The addon must be un-zipped in your user's FreeCAD/Mod folder. 
 
 **Note**: Your user's FreeCAD folder location is obtained by typing in FreeCAD's python console: `FreeCAD.ConfigGet("UserAppData")`.
 
-You must then rename the new folder 'EM'. I.e., the new folder structure must be <UserAppData>/Mod/EM. Opening, or closing/reopening FreeCAD then reloads the workbenches, and the E.M. workbench will show up in the pull-down workbenches menu in FreeCAD.
+You must then rename the new folder 'EM', i.e. the new folder structure must be <UserAppData>/Mod/EM. Opening, or closing/reopening FreeCAD then reloads the workbenches, and the E.M. workbench will show up in the pull-down workbenches menu in FreeCAD.
 
 ## Additional information
 
