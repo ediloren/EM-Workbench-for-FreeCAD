@@ -71,7 +71,7 @@ class _CommandAbout:
         msg = translate("EM","ElectroMagnetic Workbench version ") + EM_VERSION + "\n\n" + EM_AUTHOR + "\n" + EM_LICENSE
 
         if FreeCAD.GuiUp:
-            # Simple QMessageBox providing "about" informaiton
+            # Simple QMessageBox providing "about" information
             diag = QtGui.QMessageBox(QtGui.QMessageBox.Information, translate("EM_About","About ElectroMagnetic workbench"), msg)
             diag.setWindowModality(QtCore.Qt.ApplicationModal)
             diag.exec_()

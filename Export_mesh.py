@@ -83,7 +83,7 @@ def export_mesh(filename, meshobj=None, isDiel=False, showNormals=False, folder=
             elif len(facet.Points) == 4:
                 fid.write("Q " + condName)
             else:
-                FreeCAD.Console.PrintMessage("Unforseen number of mesh facet points: " + len(facet.Points) + ", skipping facet")
+                FreeCAD.Console.PrintMessage("Unforeseen number of mesh facet points: " + len(facet.Points) + ", skipping facet")
                 continue
             center = Vector(0.0, 0.0, 0.0)
             avgSideLen = 0.0
@@ -234,7 +234,7 @@ def export_faces(filename, isDiel=False, name="", showNormals=False, forceMesh=F
             elif pointsNum == 4:
                 fid.write("Q " + condName)
             else:
-                FreeCAD.Console.PrintMessage("Unforseen number of panel vertexes: " + pointsNum + ", skipping panel")
+                FreeCAD.Console.PrintMessage("Unforeseen number of panel vertexes: " + pointsNum + ", skipping panel")
                 continue
             center = Vector(0.0, 0.0, 0.0)
             avgSideLen = 0.0
