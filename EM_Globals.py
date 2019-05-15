@@ -29,12 +29,10 @@ __title__="FreeCAD E.M. Workbench global definitions"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
 
-from FreeCAD import Vector
-
 # defines
 #
 # version information
-EM_VERSION = '1.0.1'
+EM_VERSION = '2.0.0'
 # default node color
 EMFHNODE_DEF_NODECOLOR = (1.0,0.0,0.0)
 # tolerance in degrees when verifying if vectors are parallel
@@ -42,9 +40,23 @@ EMFHSEGMENT_PARTOL = 0.01
 # tolerance in length
 EMFHSEGMENT_LENTOL = 1e-8
 
-import FreeCAD, Part
+import FreeCAD, Part, Draft
 from FreeCAD import Vector
+import EM
 
+if FreeCAD.GuiUp:
+    import FreeCADGui
+    from PySide import QtCore, QtGui
+    from DraftTools import translate
+    from PySide.QtCore import QT_TRANSLATE_NOOP
+else:
+    # \cond
+    def translate(ctxt,txt, utf8_decode=False):
+        return txt
+    def QT_TRANSLATE_NOOP(ctxt,txt):
+        return txt
+    # \endcond
+    
 def getAbsCoordBodyPart(obj,position):
     ''' Retrieve the absolute coordinates of a point belonging to an object, even if in a Body or Part
 
@@ -139,4 +151,32 @@ def makeSegShape(n1,n2,width,height,ww):
     # create a shell. Does not need to be solid.
     segShell = Part.makeShell([face1,face2,face3,face4,face5,face6])
     return segShell   
+
+def getVHSolver(createIfNotExisting=False):
+    ''' Retrieves the VHSolver object.
+    
+        'createIfNotExisting' if True forces the creation of a VHSolver object,
+            if not already existing
+            
+        Returns the VHSolver object of the current Document. If more than one VHSolver object is present,
+        return the first one.
+'''
+    # get the document containing this object
+    doc = FreeCAD.ActiveDocument
+    if doc is None:
+        FreeCAD.Console.PrintWarning(translate("EM","No active document available. Cannot get any VHSolver object."))
+        return None
+    solver = [obj for obj in doc.Objects if Draft.getType(obj) == "VHSolver"]
+    if solver == []:
+        if createIfNotExisting == True:
+            solver = EM.makeVHSolver()
+            if solver is None:
+                FreeCAD.Console.PrintError(translate("EM","Cannot create VHSolver!"))
+        else:
+            FreeCAD.Console.PrintWarning(translate("EM","Cannot get VHSolver. Is at least one VHSolver object existing?"))
+            return None
+    else:
+        # take the first in the list
+        solver = solver[0]
+    return solver
 

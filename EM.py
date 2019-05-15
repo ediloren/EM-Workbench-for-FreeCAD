@@ -63,8 +63,11 @@ from EM_FHPort import *
 from EM_FHEquiv import *
 from EM_FHSolver import *
 from EM_FHInputFile import *
-## VoxHenry specific
-#from EM_VHSolver import *
+# VoxHenry specific
+from EM_VHSolver import *
+from EM_VHConductor import *
+from EM_VHPort import *
+from EM_VHInputFile import *
 
 # for debugging
 #import EM_Globals
@@ -103,3 +106,12 @@ from EM_FHInputFile import *
 #import EM_VHSolver
 #reload(EM_VHSolver)
 #from EM_VHSolver import *
+#import EM_VHConductor
+#reload(EM_VHConductor)
+#from EM_VHConductor import *
+#import EM_VHPort
+#reload(EM_VHPort)
+#from EM_VHPort import *
+#import EM_VHInputFile
+#reload(EM_VHInputFile)
+#from EM_VHInputFile import *

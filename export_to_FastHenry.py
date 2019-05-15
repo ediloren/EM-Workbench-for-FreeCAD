@@ -295,14 +295,7 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
                     continue
                 
             # sort the edges. If the selected path is disconnected, the path will be broken!
-            edges = Part.__sortEdges__(edges_raw)
-            # TBC: join parts with additional edges, or .equiv-ing them, using distToShape between the obj.Shape
-            #      Can happen with a compound containing different edges / wires / stetches
-            #edge = Part.Edge(Part.Line(Vector(154.0002, -62.6872,0), Vector(154.0002,-53.1876,0)))
-            #v = Part.Vertex(edges[0].Curve.StartPoint)
-            #v.Tolerance
-            #App.ActiveDocument.Shape.Shape.Vertexes[1].distToShape(App.ActiveDocument.Shape001.Shape.Vertexes[0])
-            
+            edges = Part.__sortEdges__(edges_raw)           
             # scan edges and derive nodes
             nodes = []
             for edge in edges:

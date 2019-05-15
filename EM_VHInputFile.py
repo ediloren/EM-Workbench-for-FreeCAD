@@ -1,10 +1,7 @@
 #***************************************************************************
 #*                                                                         *
-#*   Copyright (c) 2018                                                    *
-#*   Efficient Power Conversion Corporation, Inc.  http://epc-co.com       *
-#*                                                                         *
-#*   Developed by FastFieldSolvers S.R.L. under contract by EPC            *
-#*   http://www.fastfieldsolvers.com                                       *
+#*   Copyright (c) 2019                                                    *
+#*   FastFieldSolvers S.R.L., http://www.fastfieldsolvers.com              *
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
 #*   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -25,7 +22,7 @@
 #***************************************************************************
 
 
-__title__="FreeCAD E.M. Workbench FastHenry create input file command"
+__title__="FreeCAD E.M. Workbench VoxHenry create input file command"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
 
@@ -49,28 +46,28 @@ else:
 __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
-def createFHInputFile(doc=None,filename=None,folder=None):
-    '''Outputs a FastHenry input file based on the active document geometry
+def createVHInputFile(doc=None,filename=None,folder=None):
+    '''Outputs a VoxHenry input file based on the active document geometry
     
        'doc' is the Document object that must contain at least one 
-            EM_FHSolver object and the relevant geometry.
+            EM_VHSolver object and the relevant geometry.
             If no 'doc' is given, the active document is used, if any.
        'filename' is the filename to use. If not passed as an argument,
-            the 'Filename' property of the FHSolver object contained in the document
-            will be used. If the "Filename" string in the FHSolver object is empty,
+            the 'Filename' property of the VHSolver object contained in the document
+            will be used. If the "Filename" string in the VHSolver object is empty,
             the function builds a filename concatenating the document name
-            with the default extension EMFHSOLVER_DEF_FILENAME.
+            with the default extension EMVHSOLVER_DEF_FILENAME.
             Whatever the name, if a file with the same name exists in the target
             folder, the user is prompted to know if he/she wants to overwrite it.
         'folder' is the folder where the file will be stored. If not passed
-            as an argument, the 'Folder' property of the FHSolver object
+            as an argument, the 'Folder' property of the VHSolver object
             contained in the document will be used. If the 'Folder' string
-            in the FHSolver object is empty, the function defaults to the
+            in the VHSolver object is empty, the function defaults to the
             user's home path (e.g. in Windows "C:\Documents and Settings\
             username\My Documents", in Linux "/home/username")
     
     Example:
-         createFHInputFile()
+         createVHInputFile()
 '''
     if not doc:
         doc = FreeCAD.ActiveDocument
@@ -78,21 +75,21 @@ def createFHInputFile(doc=None,filename=None,folder=None):
         FreeCAD.Console.PrintWarning(translate("EM","No active document available. Aborting."))
         return
     # get the solver object, if any
-    solver = [obj for obj in doc.Objects if Draft.getType(obj) == "FHSolver"]
+    solver = [obj for obj in doc.Objects if Draft.getType(obj) == "VHSolver"]
     if solver == []:
         # error
-        FreeCAD.Console.PrintWarning(translate("EM","FHSolver object not found in the document. Aborting."))
+        FreeCAD.Console.PrintWarning(translate("EM","VHSolver object not found in the document. Aborting."))
         return
     else:
         if len(solver) > 1:
-            FreeCAD.Console.PrintWarning(translate("EM","More than one FHSolver object found in the document. Using the first one."))
+            FreeCAD.Console.PrintWarning(translate("EM","More than one VHSolver object found in the document. Using the first one."))
         solver = solver[0]
     if not filename:
         # if 'filename' was not passed as an argument, retrieve it from the 'solver' object
         # (this should be the standard way)
         if solver.Filename == "":
             # build a filename concatenating the document name
-            solver.Filename = doc.Name + EM.EMFHSOLVER_DEF_FILENAME
+            solver.Filename = doc.Name + EM.EMVHSOLVER_DEF_FILENAME
         filename = solver.Filename
     else:
         # otherwise, if the user passed a filename to the function, update it in the 'solver' object
@@ -118,62 +115,48 @@ def createFHInputFile(doc=None,filename=None,folder=None):
         ret = diag.exec_()
         if ret == QtGui.QMessageBox.Cancel:
             return
-    FreeCAD.Console.PrintMessage(QT_TRANSLATE_NOOP("EM","Exporting to FastHenry file ") + "'" + folder + os.sep + filename + "'\n")
+    FreeCAD.Console.PrintMessage(QT_TRANSLATE_NOOP("EM","Exporting to VoxHenry file ") + "'" + folder + os.sep + filename + "'\n")
     with open(folder + os.sep + filename, 'w') as fid:
         # serialize the header
-        solver.Proxy.serialize(fid,"head")
-        # now the nodes
-        fid.write("* Nodes\n")
-        nodes = [obj for obj in doc.Objects if Draft.getType(obj) == "FHNode"]
-        for node in nodes:
-            node.Proxy.serialize(fid)
+        solver.Proxy.serialize(fid)
+        # check if there are superconductors
+        isSupercond = solver.Proxy.isSupercond()
+        if isSupercond:
+            fid.write("* Specify there are superconductors\n")
+            fid.write("Superconductor\n")
+            fid.write("\n")
+        # now the conductors
+        fid.write("* Voxel list\n")
+        fid.write("* Format is:\n")
+        fid.write("* V <index_x> <index_y> <index_z> <conductivity S/m>\n")
+        fid.write("*\n")
+        fid.write("StartVoxelList\n")
+        conds = [obj for obj in doc.Objects if Draft.getType(obj) == "VHConductor"]
+        for cond in conds:
+            FreeCAD.Console.PrintMessage(QT_TRANSLATE_NOOP("EM","  Exporting conductor ") + "'" + cond.Label + "'\n")
+            cond.Proxy.serialize(fid, isSupercond)
+        fid.write("EndVoxelList\n")
         fid.write("\n")
-        # then the segments
-        segments = [obj for obj in doc.Objects if Draft.getType(obj) == "FHSegment"]
-        if segments:
-            fid.write("* Segments\n")
-            for segment in segments:
-                segment.Proxy.serialize(fid)
-            fid.write("\n")
-        # then the paths
-        paths = [obj for obj in doc.Objects if Draft.getType(obj) == "FHPath"]
-        if paths:
-            fid.write("* Segments from paths\n")
-            for path in paths:
-                path.Proxy.serialize(fid)
-            fid.write("\n")
-        # then the planes
-        planes = [obj for obj in doc.Objects if Draft.getType(obj) == "FHPlane"]
-        if planes:
-            fid.write("* Planes\n")
-            for plane in planes:
-                plane.Proxy.serialize(fid)
-            fid.write("\n")
-        # then the .equiv
-        equivs = [obj for obj in doc.Objects if Draft.getType(obj) == "FHEquiv"]
-        if equivs:
-            fid.write("* Node shorts\n")
-            for equiv in equivs:
-                equiv.Proxy.serialize(fid)
-            fid.write("\n")
         # then the ports
-        fid.write("* Ports\n")
-        ports = [obj for obj in doc.Objects if Draft.getType(obj) == "FHPort"]
-        for port in ports:
-            port.Proxy.serialize(fid)
-        fid.write("\n")
-        # and finally the tail
-        solver.Proxy.serialize(fid,"tail")
+        ports = [obj for obj in doc.Objects if Draft.getType(obj) == "VHPort"]
+        if ports:
+            fid.write("* Port nodes list\n")
+            fid.write("* Format is:\n")
+            fid.write("* N <portname> <excitation or ground (P/N)> <voxel_index_x> <voxel_index_y> <voxel_index_z> <node (+z,-z,+x,-x,+y,-y)>\n")
+            fid.write("*\n")
+            for port in ports:
+                port.Proxy.serialize(fid)
+            fid.write("\n")
     FreeCAD.Console.PrintMessage(QT_TRANSLATE_NOOP("EM","Finished exporting")+"\n")
 
-class _CommandFHInputFile:
-    ''' The EM FastHenry create input file command definition
+class _CommandVHInputFile:
+    ''' The EM VoxHenry create input file command definition
 '''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'EM_FHInputFile.svg') ,
-                'MenuText': QT_TRANSLATE_NOOP("EM_FHInputFile","FHInputFile"),
+        return {'Pixmap'  : os.path.join(iconPath, 'EM_VHInputFile.svg') ,
+                'MenuText': QT_TRANSLATE_NOOP("EM_VHInputFile","VHInputFile"),
                 'Accel': "E, I",
-                'ToolTip': QT_TRANSLATE_NOOP("EM_FHInputFile","Creates a FastHenry input file")}
+                'ToolTip': QT_TRANSLATE_NOOP("EM_VHInputFile","Creates a FastHenry input file")}
                 
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
@@ -182,11 +165,11 @@ class _CommandFHInputFile:
         # preferences
         #p = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/EM")
         #self.Width = p.GetFloat("Width",200)
-        FreeCAD.ActiveDocument.openTransaction(translate("EM","Create a FastHenry file"))
+        FreeCAD.ActiveDocument.openTransaction(translate("EM","Create a VoxHenry file"))
         FreeCADGui.addModule("EM")
-        FreeCADGui.doCommand('obj=EM.createFHInputFile(App.ActiveDocument)')
+        FreeCADGui.doCommand('obj=EM.createVHInputFile(App.ActiveDocument)')
         FreeCAD.ActiveDocument.commitTransaction()
         FreeCAD.ActiveDocument.recompute()
 
 if FreeCAD.GuiUp:
-    FreeCADGui.addCommand('EM_FHInputFile',_CommandFHInputFile())
+    FreeCADGui.addCommand('EM_VHInputFile',_CommandVHInputFile())

@@ -81,15 +81,15 @@ def makeFHSegment(baseobj=None,nodeStart=None,nodeEnd=None,width=None,height=Non
         _ViewProviderFHSegment(obj.ViewObject)
         # set base ViewObject properties to user-selected values (if any)
     # check if 'nodeStart' is a FHNode, and if so, assign it as segment start node
-    if nodeStart:
+    if nodeStart is not None:
         if Draft.getType(nodeStart) == "FHNode":
             obj.NodeStart = nodeStart
     # check if 'nodeEnd' is a FHNode, and if so, assign it as segment end node
-    if nodeEnd:
+    if nodeEnd is not None:
         if Draft.getType(nodeEnd) == "FHNode":
             obj.NodeEnd = nodeEnd            
     # check if 'baseobj' is a wire (only base object allowed), and only if not passed any node
-    if baseobj and not obj.NodeStart and not obj.NodeEnd:
+    if (baseobj is not None) and (obj.NodeStart is None and obj.NodeEnd is None):
         if Draft.getType(baseobj) == "Wire":
             if len(baseobj.Shape.Vertexes) == 2:
                 import EM_FHNode

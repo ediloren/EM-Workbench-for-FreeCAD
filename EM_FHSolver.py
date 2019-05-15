@@ -112,9 +112,6 @@ def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmi
         obj.Sigma = sigma
     else:
         # use default sigma, but scale it according to the chosen units of measurement
-        mylist = EMFHSOLVER_UNITS
-        unitindex = mylist.index('mm')
-        unitindex  = EMFHSOLVER_UNITS.index("mm")
         obj.Sigma = EMFHSOLVER_DEF_SEGSIGMA * EMFHSOLVER_UNITS_VALS[EMFHSOLVER_UNITS.index(obj.Units)]
     if nhinc:
         obj.nhinc = nhinc

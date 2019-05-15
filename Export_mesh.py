@@ -155,6 +155,8 @@ def export_faces(filename, isDiel=False, name="", showNormals=False, forceMesh=F
         a reference point to each panel to indicate which is the external side (outside)
     'name' is the name of the conductor created in the file. If not specified, defaults
         to the label of the first element in the selection set
+    'forceMesh' force the meshing of all faces, even if they could be exported non-meshed
+        (triangular or quadrilateral faces).
     'showNormals' will add a compound object composed by a set of arrows showing the 
         normal direction for each panel
     'folder' is the folder in which 'filename' will be saved
@@ -203,7 +205,7 @@ def export_faces(filename, isDiel=False, name="", showNormals=False, forceMesh=F
     for face in facesSimple:
         sortEdges = Part.__sortEdges__(face.Edges)
         # Point of a Vertex is a Vector, as well as Face.normalAt()
-        points = [x.Vertexes[0].Point for x in sortEdges]
+        points = [x.firstVertex().Point for x in sortEdges]
         panels.append( [points, face.normalAt(0,0)] )
     for facet in facets:
         points = [ Vector(x) for x in facet.Points]

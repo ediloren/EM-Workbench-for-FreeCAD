@@ -110,7 +110,7 @@ class _FHPath:
     def __init__(self, obj):
         ''' Add properties '''
         obj.addProperty("App::PropertyLink", "Base", "EM", QT_TRANSLATE_NOOP("App::Property","The base object this component is built upon"))
-        obj.addProperty("App::PropertyLinkList","Nodes","EM",QT_TRANSLATE_NOOP("App::Property","The list of FHNodes along the path. Not for direct user modification."))
+        obj.addProperty("App::PropertyLinkList","Nodes","EM",QT_TRANSLATE_NOOP("App::Property","The list of FHNodes along the path (read only)"),1)
         obj.addProperty("App::PropertyLength","Width","EM",QT_TRANSLATE_NOOP("App::Property","Path width ('w' segment parameter)"))
         obj.addProperty("App::PropertyLength","Height","EM",QT_TRANSLATE_NOOP("App::Property","Path height ('h' segment parameter)"))
         obj.addProperty("App::PropertyInteger","Discr","EM",QT_TRANSLATE_NOOP("App::Property","Max number of segments into which curves will be discretized"))
@@ -120,11 +120,6 @@ class _FHPath:
         obj.addProperty("App::PropertyInteger","nwinc","EM",QT_TRANSLATE_NOOP("App::Property","Number of filaments in the width direction ('nwinc' segment parameter)"))
         obj.addProperty("App::PropertyInteger","rh","EM",QT_TRANSLATE_NOOP("App::Property","Ratio of adjacent filaments in the height direction ('rh' segment parameter)"))
         obj.addProperty("App::PropertyInteger","rw","EM",QT_TRANSLATE_NOOP("App::Property","Ratio of adjacent filaments in the width direction ('rw' segment parameter)"))
-        # Setting the Nodes property to read-only. The user should not directly handle this.
-        #0 -- default mode, read and write
-        #1 -- read-only
-        #2 -- hidden
-        obj.setEditorMode("Nodes", 1)
         obj.Proxy = self
         self.Type = "FHPath"
         obj.Discr = EMFHPATH_DEF_DISCR

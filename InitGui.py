@@ -45,8 +45,7 @@ class EMWorkbench(Workbench):
         self.emtools = ["EM_About"]
         self.emfhtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPath", "EM_FHPlane",
                 "EM_FHPlaneHole", "EM_FHPlaneAddRemoveNodeHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile"]
-        #self.emvhtools = ["EM_VHSolver"]
-        self.emvhtools = []
+        self.emvhtools = ["EM_VHSolver", "EM_VHConductor", "EM_VHPort", "EM_VHCondPortVoxelize", "EM_VHVoxelizeAll", "EM_VHInputFile"]
         # draft tools
         # setup menus
         self.draftcmdList = ["Draft_Line","Draft_Rectangle"]
@@ -63,7 +62,7 @@ class EMWorkbench(Workbench):
 
         def QT_TRANSLATE_NOOP(scope, text): return text
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. FastHenry tools"),self.emfhtools)
-        #self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. VoxHenry tools"),self.emvhtools)
+        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. VoxHenry tools"),self.emvhtools)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft creation tools"),self.draftcmdList)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft mod tools"),self.draftmodtools)
         self.appendMenu(QT_TRANSLATE_NOOP("EM","&EM"),self.emfhtools + self.emvhtools + self.emtools)
