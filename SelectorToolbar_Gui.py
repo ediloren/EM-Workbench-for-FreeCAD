@@ -90,11 +90,11 @@ def onOrientationChanged():
     if tb.orientation() == QtCore.Qt.Orientation.Horizontal:
         for b in tb.findChildren(QtGui.QToolButton):
             b.setProperty("toolbar_orientation", "horizontal")
-            b.style().polish(b)
+            # b.style().polish(b)
     else:
         for b in tb.findChildren(QtGui.QToolButton):
             b.setProperty("toolbar_orientation", "vertical")
-            b.style().polish(b)
+            # b.style().polish(b)
 
 
 def onStyle():
