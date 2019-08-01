@@ -10,7 +10,7 @@ Efficient Power Conversion Corporation, Inc.  http://epc-co.com
 Developed by FastFieldSolvers S.R.L.  http://www.fastfieldsolvers.com under contract by EPC
 
 
-### FasterCap and FastCap support
+### VoxHenry, FasterCap and FastCap support
 
 Copyright (c) 2019
 FastFieldSolvers S.R.L. http://www.fastfieldsolvers.com
@@ -22,7 +22,8 @@ FreeCAD is used as pre-processor interfacing to the open source electromagnetic 
 
 At present, the workbench supports:
 
-- [FastHenry](https://www.fastfieldsolvers.com/fasthenry2.htm) inductance solver: ongoing development including GUI support
+- [FastHenry](https://www.fastfieldsolvers.com/fasthenry2.htm) inductance solver
+- [VoxHenry](https://www.fastfieldsolvers.com/software.htm#voxhenry) inductance solver: beta support
 - [FasterCap](https://www.fastfieldsolvers.com/fastercap.htm) capacitance solver: ongoing development, today at the stage of Python macro only, for creating an input file
 
 ## Version
