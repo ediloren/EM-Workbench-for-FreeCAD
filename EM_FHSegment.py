@@ -186,7 +186,7 @@ class _FHSegment:
             obj.Width = EMFHSEGMENT_DEF_SEGWIDTH
         if obj.Height == None or obj.Height <= 0:
             obj.Height = EMFHSEGMENT_DEF_SEGHEIGHT
-        # and finally, if everything is ok, make and assing the shape
+        # and finally, if everything is ok, make and assign the shape
         self.assignShape(obj)    
         #FreeCAD.Console.PrintWarning("_FHSegment execute() ends\n") #debug
 

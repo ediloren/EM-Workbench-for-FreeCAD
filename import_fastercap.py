@@ -141,7 +141,7 @@ def parse_3D_input_file(fileinname, parentFid, parentFilePosMap, isdiel = False,
     m_iParseLevel = m_iParseLevel + 1
     
     if m_iParseLevel >= AUTOREFINE_MAX_PARSE_LEVEL:
-        FreeCAD.Console.PrintMessage("Warning: maxumum number (" + format(AUTOREFINE_MAX_PARSE_LEVEL) + 
+        FreeCAD.Console.PrintMessage("Warning: maximum number (" + format(AUTOREFINE_MAX_PARSE_LEVEL) + 
                                      ") of recursive files exceeded, skipping file " + fileinname + "\n")
         return True
         

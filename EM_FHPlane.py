@@ -420,7 +420,7 @@ class _FHPlane:
         
             'x_coord' and 'y_coord' are the point coordinates, of type Base.Quantity
             'obj' is the FHPlane object
-            'seg1len' and 'seg2len' are the lengths of the segments along the lenght and width, respectively
+            'seg1len' and 'seg2len' are the lengths of the segments along the length and width, respectively
 
             The function returns a tuple containing two integers corresponding to the node
             position within the plane array of internal nodes.

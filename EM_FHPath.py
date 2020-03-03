@@ -254,7 +254,7 @@ class _FHPath:
             self.ww = [Vector(0,0,0)]
         else:
             # transform 'obj.ww' according to the 'Base' Placement
-            # (transation is don't care, we worry about rotation)
+            # (translation is don't care, we worry about rotation)
             self.ww = [obj.Base.Placement.multVec(obj.ww)]
         shapes = []
         # get node positions in absolute coordinates (at least two nodes exist, checked above)
