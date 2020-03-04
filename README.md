@@ -1,4 +1,5 @@
 # ElectroMagnetic workbench for FreeCAD
+[![Total alerts](https://img.shields.io/lgtm/alerts/g/ediloren/EM-Workbench-for-FreeCAD.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/ediloren/EM-Workbench-for-FreeCAD/alerts/) [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/ediloren/EM-Workbench-for-FreeCAD.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/ediloren/EM-Workbench-for-FreeCAD/context:python)
 
 ## Copyright
 
