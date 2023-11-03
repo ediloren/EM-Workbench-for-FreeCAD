@@ -64,7 +64,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -75,13 +75,13 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeVHSolver(units=None,fmin=None,fmax=None,ndec=None,folder=None,filename=None,name='VHSolver'):
     ''' Creates a VoxHenry Solver object (all statements needed for the simulation, and container for objects)
-    
+
         'units' is the VoxHenry unit of measurement. Each unit in FreeCad will be
             one unit of the default unit of measurement in VoxHenry.
             Allowed values are: "km", "m", "cm", "mm", "um", "in", "mils".
             Defaults to EMVHSOLVER_DEFUNITS
-        'fmin' is the float minimum simulation frequency 
-        'fmax' is the float maximum simulation frequency 
+        'fmin' is the float minimum simulation frequency
+        'fmax' is the float maximum simulation frequency
         'ndec' is the float value defining how many frequency points per decade
             will be simulated
         'folder' is the folder into which the FastHenry file will be saved.
@@ -95,8 +95,8 @@ def makeVHSolver(units=None,fmin=None,fmax=None,ndec=None,folder=None,filename=N
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _VHSolver 
+    # this adds the relevant properties to the object
+    #'obj' (e.g. 'Base' property) making it a _VHSolver
     _VHSolver(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
@@ -170,11 +170,11 @@ class _VHSolver:
         self.justLoaded = False
 
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute() 
+        ''' this method is mandatory. It is called on Document.recompute()
     '''
         if self.bbox.isValid():
             obj.Shape = Part.makeBox(self.bbox.XLength,self.bbox.YLength,self.bbox.ZLength,Vector(self.bbox.XMin,self.bbox.YMin,self.bbox.ZMin))
-            
+
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
     '''
@@ -209,10 +209,10 @@ class _VHSolver:
                     self.Object.freq = [self.Object.fmin*math.pow(10,m*logofstep) for m in range(0,npoints)]
                 else:
                     self.Object.freq = [1]
-                
+
     def computeContainingBBox(self):
         ''' Get the bounding box containing all the VHConductors in the document
-                   
+
             Returns the global bounding box.
             If there are no VHConductors, or if the VHConductors Base objects have no Shape,
             the returned BoundBox is invalid (.isValid() on the returned BoundBox gives False)
@@ -235,7 +235,7 @@ class _VHSolver:
             # if we just re-loaded the model, do not flag the bbox as invalid.
             # the problem is that the Shape.BoundBox of the base objects of the VHConductors
             # can be different if the object actually has a visible shape or not.
-            # At load time, if the object is invisible, its boundbox may be different. 
+            # At load time, if the object is invisible, its boundbox may be different.
             # However, if we knew it was valid at save time, no reason to invalidate it
             if not self.justLoaded:
                 if (not gbbox.isInside(self.bbox)) and (not self.bbox.isInside(gbbox)):
@@ -247,10 +247,10 @@ class _VHSolver:
 
     def createVoxelSpace(self, bbox=None, delta=None):
         ''' Creates the voxel tensor (3D array) in the given bounding box
-        
+
             'bbox' is the overall FreeCAD.BoundBox bounding box
             'delta' is the voxels size length
-            
+
             Returns a voxel tensor as a Numpy 3D array.
             If gbbox is None, returns None
     '''
@@ -277,9 +277,9 @@ class _VHSolver:
 
     def getVoxelSpace(self,force=False):
         ''' Retrieves the voxel space. If not computed yet, or invalid, forces computation.
-            
+
             'force' causes full recalculation of both the bbox and the voxel space
-            
+
             Returns the voxel space tensor as a Numpy 3D array. If impossible to calculate, returns 'None'
     '''
         # get the document containing this object
@@ -311,14 +311,14 @@ class _VHSolver:
 
     def getGlobalBBox(self):
         ''' Retrieves the bounding box. If not calculated yet, forces calculation
-        
+
             Returns the global bbox as FreeCAD.BoundBox class
     '''
         return self.computeContainingBBox()
-        
+
     def getDelta(self):
         ''' Retrieves the voxel size.
-        
+
             Returns the voxel size float value 'delta'.
     '''
         return self.Object.delta
@@ -326,7 +326,7 @@ class _VHSolver:
     def isSupercond(self):
         ''' Check if there is any VHConductor specifying a lambda value (in this case,
             must treat the system as containing superconductors)
-                   
+
             Returns boolean 'True' if there are superconductors
     '''
         isSupercond = False
@@ -350,7 +350,7 @@ class _VHSolver:
 
     def getNextCondIndex(self):
         ''' Generates a unique conductor index for marking the different VHConductors in the voxel space.
-        
+
             Returns a unique integer.
     '''
         self.Object.condIndexGenerator = self.Object.condIndexGenerator + 1
@@ -428,13 +428,13 @@ class _VHSolver:
             self.oldDelta = dictForJSON['oldD']
             bboxcoord = dictForJSON['bbox']
             self.bbox = FreeCAD.BoundBox(bboxcoord[0],bboxcoord[1],bboxcoord[2],bboxcoord[3],bboxcoord[4],bboxcoord[5])
-            voxelspacedim = dictForJSON['vsDim']        
+            voxelspacedim = dictForJSON['vsDim']
             self.voxelSpace = np.full(voxelspacedim,0,np.int16)
             voxelSpaceConds = (np.array(dictForJSON['vsX']),np.array(dictForJSON['vsY']),np.array(dictForJSON['vsZ']))
             self.voxelSpace[voxelSpaceConds] = dictForJSON['vsVals']
             self.Type = dictForJSON['type']
         self.justLoaded = True
-            
+
 class _ViewProviderVHSolver:
     def __init__(self, vobj):
         ''' Set this object to the proxy object of the actual view provider '''
@@ -470,7 +470,7 @@ class _ViewProviderVHSolver:
 
     def __setstate__(self,state):
         return None
-            
+
 class _CommandVHSolver:
     ''' The EM VoxHenry Solver command definition
 '''
@@ -479,7 +479,7 @@ class _CommandVHSolver:
                 'MenuText': QT_TRANSLATE_NOOP("EM_VHSolver","VHSolver"),
                 'Accel': "E, Y",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_VHSolver","Creates a VoxHenry Solver object")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 
@@ -501,7 +501,7 @@ class _CommandVHVoxelizeAll:
                 'MenuText': QT_TRANSLATE_NOOP("EM_VHVoxelizeAll","VHVoxelizeAll"),
                 'Accel': "E, W",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_VHVoxelizeAll","Voxelize all the VHConductors and VHPorts in the document")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 

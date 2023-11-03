@@ -40,7 +40,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -51,8 +51,8 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def createFHInputFile(doc=None,filename=None,folder=None):
     '''Outputs a FastHenry input file based on the active document geometry
-    
-       'doc' is the Document object that must contain at least one 
+
+       'doc' is the Document object that must contain at least one
             EM_FHSolver object and the relevant geometry.
             If no 'doc' is given, the active document is used, if any.
        'filename' is the filename to use. If not passed as an argument,
@@ -68,7 +68,7 @@ def createFHInputFile(doc=None,filename=None,folder=None):
             in the FHSolver object is empty, the function defaults to the
             user's home path (e.g. in Windows "C:\Documents and Settings\
             username\My Documents", in Linux "/home/username")
-    
+
     Example:
          createFHInputFile()
 '''
@@ -174,7 +174,7 @@ class _CommandFHInputFile:
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHInputFile","FHInputFile"),
                 'Accel': "E, I",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHInputFile","Creates a FastHenry input file")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 

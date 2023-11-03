@@ -32,11 +32,11 @@ EMVHSOLVER_DEF_SIGMA = 5.8e7
 import FreeCAD, FreeCADGui, Part, Draft, DraftGeomUtils, os
 import DraftVecUtils
 import Mesh
-from EM_Globals import getVHSolver
 from FreeCAD import Vector
 import numpy as np
 import time
 from pivy import coin
+import EM
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -45,7 +45,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -69,7 +69,7 @@ def makeVHConductor(baseobj=None,name='VHConductor'):
     # to check if the object fits into the VHSolver bbox, we must retrieve
     # the global bbox *before* the new VHConductor is created.
     # get the VHSolver object; if not existing, create it
-    solver = getVHSolver(True)
+    solver = EM.getVHSolver(True)
     if solver is not None:
         gbbox = solver.Proxy.getGlobalBBox()
         condIndex = solver.Proxy.getNextCondIndex()
@@ -170,7 +170,7 @@ class _VHConductor:
         # Check if the user selected to see the voxelization, and if the voxelization exists
         if obj.ShowVoxels == True:
             # get the VHSolver object
-            solver = getVHSolver()
+            solver = EM.getVHSolver()
             if solver is not None:
                 gbbox = solver.Proxy.getGlobalBBox()
                 delta = solver.Proxy.getDelta()
@@ -205,7 +205,7 @@ class _VHConductor:
             'gbbox' (FreeCAD.BoundBox) is the overall bounding box
             'delta' is the voxels size length
             'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space
-            
+
             This version uses a standard Part::Shell
 
             Remark: the VHConductor must have already been voxelized
@@ -536,7 +536,7 @@ class _VHConductor:
         #progBar.stop()
         #FreeCAD.Console.PrintMessage(translate("EM","Voxelization of the shell completed.\n"))
         return True
-        
+
     def voxelizeConductor(self):
         ''' Voxelize the Base (solid) object. The function will modify the 'voxelSpace'
             by marking with 'CondIndex' all the voxels that sample the Base object
@@ -547,7 +547,7 @@ class _VHConductor:
         if not hasattr(self.Object.Base,"Shape"):
             return
         # get the VHSolver object
-        solver = getVHSolver()
+        solver = EM.getVHSolver()
         if solver is None:
              return
         FreeCAD.Console.PrintMessage(translate("EM","Starting voxelization of conductor ") + self.Object.Label + "...\n")
@@ -645,7 +645,7 @@ class _VHConductor:
             superconductor lambda values (even if for some conductors this may be zero)
     '''
         if self.Object.isVoxelized == True:
-            solver = getVHSolver()
+            solver = EM.getVHSolver()
             if solver is None:
                  return
             # get global parameters from the VHSolver object
@@ -783,9 +783,9 @@ class _ViewProviderVHConductor:
         self.VObject.RootNode.addChild(sep)
         #FreeCAD.Console.PrintMessage("ViewProvider attach() completed\n")
         return
-         
+
     def updateData(self, fp, prop):
-        ''' If a property of the data object has changed we have the chance to handle this here 
+        ''' If a property of the data object has changed we have the chance to handle this here
             'fp' is the handled feature (the object)
             'prop' is the name of the property that has changed
     '''
@@ -813,7 +813,7 @@ class _ViewProviderVHConductor:
             #FreeCAD.Console.PrintMessage("self.data.point " + str(self.data.point.get()) + "\n") # debug
             #FreeCAD.Console.PrintMessage("updateData() shape!\n") # debug
         return
-       
+
 #    def getDisplayModes(self,obj):
 #        '''Return a list of display modes.'''
 #        modes=[]
@@ -843,7 +843,7 @@ class _ViewProviderVHConductor:
             self.style2.lineWidth = self.VObject.LineWidth
         if prop == "Transparency":
             self.material.transparency = self.VObject.Transparency/100.0
-        
+
     def getDefaultDisplayMode(self):
         ''' Return the name of the default display mode. It must be defined in getDisplayModes. '''
         return "Flat Lines"

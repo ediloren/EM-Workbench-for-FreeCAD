@@ -51,7 +51,7 @@ class EMWorkbench(Workbench):
         self.draftcmdList = ["Draft_Line","Draft_Rectangle"]
         self.draftmodtools = ["Draft_Move","Draft_Rotate","Draft_Offset",
                 "Draft_Trimex", "Draft_Upgrade", "Draft_Downgrade", "Draft_Scale",
-                "Draft_Shape2DView","Draft_Draft2Sketch","Draft_Array",
+                "Draft_Shape2DView","Draft_Draft2Sketch","Draft_OrthoArray",
                 "Draft_Clone"]
         self.treecmdList = ["Draft_SelectPlane", "Draft_ShowSnapBar","Draft_ToggleGrid"]
         self.snapList = ['Draft_Snap_Lock','Draft_Snap_Midpoint','Draft_Snap_Perpendicular',
@@ -76,7 +76,7 @@ class EMWorkbench(Workbench):
 
     def Activated(self):
         Log("EM workbench activated\n")
-        
+
     def Deactivated(self):
         Log("EM workbench deactivated\n")
 
@@ -84,7 +84,7 @@ class EMWorkbench(Workbench):
 #        self.appendContextMenu("Utilities",self.EMcontexttools)
 
     # needed if this is a pure Python workbench
-    def GetClassName(self): 
+    def GetClassName(self):
         return "Gui::PythonWorkbench"
 
 FreeCADGui.addWorkbench(EMWorkbench)

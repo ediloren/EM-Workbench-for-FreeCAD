@@ -35,7 +35,6 @@ EMFHNODE_DEF_NODESIZE = 10
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
 from FreeCAD import Vector
-from EM_Globals import EMFHNODE_DEF_NODECOLOR
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -44,7 +43,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -55,7 +54,7 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHNode(baseobj=None,X=0.0,Y=0.0,Z=0.0,color=None,size=None,name='FHNode'):
     ''' Creates a FastHenry node ('N' statement in FastHenry)
-    
+
         'baseobj' is the point object whose position is used as base for the FNNode.
             It has priority over X,Y,Z.
             If no 'baseobj' is given, X,Y,Z are used as coordinates
@@ -66,14 +65,15 @@ def makeFHNode(baseobj=None,X=0.0,Y=0.0,Z=0.0,color=None,size=None,name='FHNode'
             Defaults to EMFHNODE_DEF_NODECOLOR
         'size' node size. Defaults to EMFHNODE_DEF_NODESIZE
         'name' is the name of the object
-    
+
     Example:
         node = makeFHNode(X=1.0,Y=2.0,Z=0.0)
 '''
+    from EM_Globals import EMFHNODE_DEF_NODECOLOR
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _FHNode 
+    # this adds the relevant properties to the object
+    #'obj' (e.g. 'Base' property) making it a _FHNode
     _FHNode(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
@@ -113,9 +113,9 @@ class _FHNode:
         # save the object in the class, to store or retrieve specific data from it
         # from within the class
         self.Object = obj
-        
+
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute() 
+        ''' this method is mandatory. It is called on Document.recompute()
 '''
         #FreeCAD.Console.PrintWarning("_FHNode execute\n") #debug
         # set the shape as a Vertex at relative position obj.X, obj.Y, obj.Z
@@ -136,7 +136,7 @@ class _FHNode:
             shape = Part.makeCompound([shape1])
         obj.Shape = shape
         #FreeCAD.Console.PrintWarning("_FHNode execute ends\n") #debug
-        
+
 # debug
 #
 #    def onBeforeChange(self, obj, prop):
@@ -148,7 +148,7 @@ class _FHNode:
 #            FreeCAD.Console.PrintWarning("_FHNode onBeforeChange Placememnt: " + str(obj.Placement)+")\n") #debug
 #
 # debug
-        
+
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
 '''
@@ -164,7 +164,7 @@ class _FHNode:
 
     def serialize(self,fid,extension=""):
         ''' Serialize the object to the 'fid' file descriptor
-        
+
         'fid': the file descriptor
         'extension': any extension to add to the node name, in case of a node
             belonging to a conductive plane. If not empty, it also changes
@@ -181,7 +181,7 @@ class _FHNode:
         fid.write("\n")
 
     def getAbsCoord(self):
-        ''' Get a FreeCAD.Vector containing the node coordinates 
+        ''' Get a FreeCAD.Vector containing the node coordinates
             in the absolute reference system
 '''
         # should be "self.Object.Placement.multVec(Vector(self.Object.X, self.Object.Y, self.Object.Z))"
@@ -192,7 +192,7 @@ class _FHNode:
 
     def getRelCoord(self):
         ''' Get a FreeCAD.Vector containing the node coordinates relative to the FHNode Placement
-        
+
         These coordinates correspond to (self.Object.X, self.Object.Y, self.Object.Z),
         that are the same as self.Object.Placement.inverse().multVec(self.Object.Shape.Point))
 '''
@@ -200,10 +200,10 @@ class _FHNode:
 
     def setRelCoord(self,rel_coord,placement=None):
         ''' Sets the node position relative to the placement
-        
+
         'rel_coord': FreeCAD.Vector containing the node coordinates relative to the FHNode Placement
         'placement': a new FHNode placement. If 'None', the placement is not changed
-        
+
         Remark: the function will not recalculate() the object (i.e. the change of position is not
         immediately visible by just calling this function)
 '''
@@ -217,7 +217,7 @@ class _FHNode:
 
     def setAbsCoord(self,abs_coord,placement=None):
         ''' Sets the absolute node position, considering the object placement, and in case forcing a new placement
-        
+
         'abs_coord': FreeCAD.Vector containing the node coordinates in the absolute reference system
         'placement': a new placement. If 'None', the placement is not changed
 
@@ -233,14 +233,14 @@ class _FHNode:
         self.Object.X = rel_coord.x
         self.Object.Y = rel_coord.y
         self.Object.Z = rel_coord.z
-       
+
     def __getstate__(self):
         return self.Type
 
     def __setstate__(self,state):
         if state:
             self.Type = state
-    
+
 class _ViewProviderFHNode:
     def __init__(self, obj):
         ''' Set this object to the proxy object of the actual view provider '''
@@ -279,7 +279,7 @@ class _ViewProviderFHNode:
 
     def __setstate__(self,state):
         return None
-            
+
 class _CommandFHNode:
     ''' The EM FastHenry Node (FHNode) command definition
 '''
@@ -288,7 +288,7 @@ class _CommandFHNode:
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHNode","FHNode"),
                 'Accel': "E, N",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHNode","Creates a FastHenry Node object from scratch or from a selected object (point)")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 
@@ -347,10 +347,10 @@ class _CommandFHNode:
         "sets up a taskbox widget"
         w = QtGui.QWidget()
         ui = FreeCADGui.UiLoader()
-        w.setWindowTitle(translate("EM","FHNode options", utf8_decode=True))
+        w.setWindowTitle(translate("EM","FHNode options"))
         grid = QtGui.QGridLayout(w)
 
-        label4 = QtGui.QLabel(translate("EM","Con&tinue", utf8_decode=True))
+        label4 = QtGui.QLabel(translate("EM","Con&tinue"))
         value4 = QtGui.QCheckBox()
         value4.setObjectName("ContinueCmd")
         value4.setLayoutDirection(QtCore.Qt.RightToLeft)
@@ -367,7 +367,7 @@ class _CommandFHNode:
         self.continueCmd = bool(i)
         if hasattr(FreeCADGui,"draftToolBar"):
             FreeCADGui.draftToolBar.continueMode = bool(i)
-            
+
 if FreeCAD.GuiUp:
     FreeCADGui.addCommand('EM_FHNode',_CommandFHNode())
 

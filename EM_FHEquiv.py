@@ -45,7 +45,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -56,18 +56,18 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHEquiv(node1=None,node2=None,name='FHEquiv'):
     '''Creates a FastHenry node equivalence ('.equiv' statement in FastHenry)
-    
+
        'node1' is the first node to short-circuit
        'node2' is the second node to short-circuit
        'name' is the name of the object
-        
+
     Example:
         equiv = makeFHEquiv(node1,node2)
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _FHEquiv 
+    # this adds the relevant properties to the object
+    #'obj' (e.g. 'Base' property) making it a _FHEquiv
     _FHEquiv(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
@@ -80,7 +80,7 @@ def makeFHEquiv(node1=None,node2=None,name='FHEquiv'):
     # check if 'nodeEnd' is a FHNode, and if so, assign it as second node
     if node2:
         if Draft.getType(node2) == "FHNode":
-            obj.Node2 = node2            
+            obj.Node2 = node2
     # return the newly created Python object
     return obj
 
@@ -97,7 +97,7 @@ class _FHEquiv:
         self.Object = obj
 
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute() 
+        ''' this method is mandatory. It is called on Document.recompute()
     '''
         if obj.Node1 == None:
             return
@@ -108,9 +108,9 @@ class _FHEquiv:
             return
         elif Draft.getType(obj.Node2) != "FHNode":
             FreeCAD.Console.PrintWarning(translate("EM","Node2 is not a FHNode"))
-            return      
+            return
         # and finally, if everything is ok, make and assign the shape
-        self.assignShape(obj)    
+        self.assignShape(obj)
 
     def assignShape(self, obj):
         ''' Compute and assign the shape to the object 'obj' '''
@@ -132,8 +132,8 @@ class _FHEquiv:
         if (n2-n1).Length < EMFHEQUIV_LENTOL:
             return None
         line = Part.makeLine(n1, n2)
-        return line   
-    
+        return line
+
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
     '''
@@ -143,7 +143,7 @@ class _FHEquiv:
             # members of the class, so __getstate__() and __setstate__() skip them);
             # so we must "re-attach" (re-create) the 'self.Object'
             self.Object = obj
-            
+
     def serialize(self,fid):
         ''' Serialize the object to the 'fid' file descriptor
     '''
@@ -204,7 +204,7 @@ class _ViewProviderFHEquiv:
 
     def __setstate__(self,state):
         return None
-        
+
 class _CommandFHEquiv:
     ''' The EM FastHenry equivalent node (FHEquiv) command definition
 '''
@@ -213,7 +213,7 @@ class _CommandFHEquiv:
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHEquiv","FHEquiv"),
                 'Accel': "E, E",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHEquiv","Creates a FastHenry equivalent node object from two FHNodes")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 
@@ -227,7 +227,7 @@ class _CommandFHEquiv:
         # if selection is not empty
         for selobj in selection:
             if Draft.getType(selobj.Object) == "FHNode":
-                nodes.append(selobj.Object)                    
+                nodes.append(selobj.Object)
         if len(nodes) <= 1:
             FreeCAD.Console.PrintWarning(translate("EM","Less than FHNodes selected when creating a FHEquiv. Nothing created."))
         else:

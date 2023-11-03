@@ -57,7 +57,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -68,7 +68,7 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmin=None,fmax=None,ndec=None,folder=None,filename=None,name='FHSolver'):
     ''' Creates a FastHenry Solver object (all statements needed for the simulation)
-    
+
         'units' is the FastHenry unit of measurement. Each unit in FreeCad will be
             one unit of the corresponding unit of measurement in FastHenry.
             Allowed values are: "km", "m", "cm", "mm", "um", "in", "mils".
@@ -82,8 +82,8 @@ def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmi
             the segment height discretization ratio. Defaults to EMFHSOLVER_DEFRH
         'rw' is the integer default rw parameter in FastHenry, for defining
             the segment width discretization ratio. Defaults to EMFHSOLVER_DEFRW
-        'fmin' is the float minimum simulation frequency 
-        'fmax' is the float maximum simulation frequency 
+        'fmin' is the float minimum simulation frequency
+        'fmax' is the float maximum simulation frequency
         'ndec' is the float value defining how many frequency points per decade
             will be simulated
         'folder' is the folder into which the FastHenry file will be saved.
@@ -97,8 +97,8 @@ def makeFHSolver(units=None,sigma=None,nhinc=None,nwinc=None,rh=None,rw=None,fmi
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _FHSolver 
+    # this adds the relevant properties to the object
+    #'obj' (e.g. 'Base' property) making it a _FHSolver
     _FHSolver(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
@@ -174,11 +174,11 @@ class _FHSolver:
         obj.Units = EMFHSOLVER_UNITS
 
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute() 
+        ''' this method is mandatory. It is called on Document.recompute()
     '''
         # but nothing to do
         return
-            
+
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
     '''
@@ -188,7 +188,7 @@ class _FHSolver:
             # members of the class, so __getstate__() and __setstate__() skip them);
             # so we must "re-attach" (re-create) the 'self.Object'
             self.Object = obj
-            
+
     def serialize(self,fid,headOrTail):
         ''' Serialize the object to the 'fid' file descriptor
     '''
@@ -212,7 +212,7 @@ class _FHSolver:
     def __setstate__(self,state):
         if state:
             self.Type = state
-            
+
 class _ViewProviderFHSolver:
     def __init__(self, obj):
         ''' Set this object to the proxy object of the actual view provider '''
@@ -251,7 +251,7 @@ class _ViewProviderFHSolver:
 
     def __setstate__(self,state):
         return None
-        
+
 class _CommandFHSolver:
     ''' The EM FastHenry Solver command definition
 '''
@@ -260,7 +260,7 @@ class _CommandFHSolver:
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHSolver","FHSolver"),
                 'Accel': "E, X",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHSolver","Creates a FastHenry Solver object")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 

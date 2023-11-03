@@ -37,7 +37,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -48,8 +48,8 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def createVHInputFile(doc=None,filename=None,folder=None):
     '''Outputs a VoxHenry input file based on the active document geometry
-    
-       'doc' is the Document object that must contain at least one 
+
+       'doc' is the Document object that must contain at least one
             EM_VHSolver object and the relevant geometry.
             If no 'doc' is given, the active document is used, if any.
        'filename' is the filename to use. If not passed as an argument,
@@ -65,7 +65,7 @@ def createVHInputFile(doc=None,filename=None,folder=None):
             in the VHSolver object is empty, the function defaults to the
             user's home path (e.g. in Windows "C:\Documents and Settings\
             username\My Documents", in Linux "/home/username")
-    
+
     Example:
          createVHInputFile()
 '''
@@ -157,7 +157,7 @@ class _CommandVHInputFile:
                 'MenuText': QT_TRANSLATE_NOOP("EM_VHInputFile","VHInputFile"),
                 'Accel': "E, I",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_VHInputFile","Creates a FastHenry input file")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 

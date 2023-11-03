@@ -28,8 +28,6 @@ __title__="FreeCAD E.M. Workbench About class"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
 
-# imported defines
-from EM_Globals import EM_VERSION
 
 # defines
 # about information
@@ -38,6 +36,7 @@ EM_LICENSE = 'Licensed under GNU Lesser General Public License (LGPL) version 2\
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
 from FreeCAD import Vector
+import EM
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -46,7 +45,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -55,7 +54,7 @@ else:
 __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join( __dir__, 'Resources' )
 
-  
+
 class _CommandAbout:
     ''' The EM About command definition
 '''
@@ -63,15 +62,15 @@ class _CommandAbout:
         # no need of icon or accelerator
         return {'MenuText': QT_TRANSLATE_NOOP("EM_About","About"),
                 'ToolTip': QT_TRANSLATE_NOOP("EM_About","About the ElectroMagnetic Workbench")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 
     def Activated(self):
-        msg = translate("EM","ElectroMagnetic Workbench version ") + EM_VERSION + "\n\n" + EM_AUTHOR + "\n" + EM_LICENSE
+        msg = translate("EM","ElectroMagnetic Workbench version ") + EM.EM_VERSION + "\n\n" + EM_AUTHOR + "\n" + EM_LICENSE
 
         if FreeCAD.GuiUp:
-            # Simple QMessageBox providing "about" information
+            # Simple QMessageBox providing "about" informaiton
             diag = QtGui.QMessageBox(QtGui.QMessageBox.Information, translate("EM_About","About ElectroMagnetic workbench"), msg)
             diag.setWindowModality(QtCore.Qt.ApplicationModal)
             diag.exec_()

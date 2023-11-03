@@ -38,13 +38,11 @@ EMFHPATH_DEF_DISCR = 3
 # the coefficient to apply to the segment width (height) to get
 # the minimum radius of curvature allowed
 EMFHPATH_TIMESWIDTH = 3
-# imported defines
-from EM_Globals import EMFHSEGMENT_PARTOL, EMFHSEGMENT_LENTOL
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
 import DraftVecUtils
-from EM_Globals import getAbsCoordBodyPart, makeSegShape
 from FreeCAD import Vector
+import EM
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -53,7 +51,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -64,7 +62,7 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHPath(baseobj=None,name='FHPath'):
     ''' Creates a FastHenry Path (a set connected 'E' FastHenry statements)
-    
+
         'baseobj' is the object on which the path is based.
             If no 'baseobj' is given, the user must assign a base
             object later on, to be able to use this object.
@@ -72,14 +70,14 @@ def makeFHPath(baseobj=None,name='FHPath'):
             even if the Path is designed to work best with the support of
             a sketch or a wire.
         'name' is the name of the object
-    
+
     Example:
         path = makeFHPath(myWire)
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _FHPath 
+    # this adds the relevant properties to the object
+    #'obj' (e.g. 'Base' property) making it a _FHPath
     _FHPath(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
@@ -128,7 +126,7 @@ class _FHPath:
         self.Object = obj
 
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute() 
+        ''' this method is mandatory. It is called on Document.recompute()
     '''
         #FreeCAD.Console.PrintWarning("_FHPath execute()\n") #debug
         # the Path needs a 'Base' object
@@ -231,9 +229,9 @@ class _FHPath:
             if edge.Length < geodim*EMFHPATH_TIMESWIDTH:
                 FreeCAD.Console.PrintWarning(translate("EM","An edge of the Base object supporting the FHPath is too short. FastHenry simulation may fail."))
             step = (edge.LastParameter - edge.FirstParameter) / ddisc
-            # if same the last vertex of the previous edge is coincident 
+            # if same the last vertex of the previous edge is coincident
             # with the first vertex of the next edge, skip the vertex
-            if (lastvertex-edge.valueAt(edge.FirstParameter)).Length < EMFHSEGMENT_LENTOL:
+            if (lastvertex-edge.valueAt(edge.FirstParameter)).Length < EM.EMFHSEGMENT_LENTOL:
                 start = 1
             else:
                 start = 0
@@ -249,33 +247,33 @@ class _FHPath:
         # find the cross-section orientation of the first segment, according to the 'Base' object Placement.
         # If 'obj.ww' is not defined,  use the FastHenry default (see makeSegShape() )
         self.ww = []
-        if obj.ww.Length < EMFHSEGMENT_LENTOL:
+        if obj.ww.Length < EM.EMFHSEGMENT_LENTOL:
             # this is zero anyway (i.e. below 'EMFHSEGMENT_LENTOL')
             self.ww = [Vector(0,0,0)]
         else:
             # transform 'obj.ww' according to the 'Base' Placement
-            # (translation is don't care, we worry about rotation)
+            # (transation is don't care, we worry about rotation)
             self.ww = [obj.Base.Placement.multVec(obj.ww)]
         shapes = []
         # get node positions in absolute coordinates (at least two nodes exist, checked above)
-        n1 = getAbsCoordBodyPart(obj.Base,self.nodeCoords[0])
-        n2 = getAbsCoordBodyPart(obj.Base,self.nodeCoords[1])
+        n1 = EM.getAbsCoordBodyPart(obj.Base,self.nodeCoords[0])
+        n2 = EM.getAbsCoordBodyPart(obj.Base,self.nodeCoords[1])
         vNext = n2-n1
         for i in range(1, len(self.nodeCoords)):
             vPrev = vNext
-            shape = makeSegShape(n1,n2,obj.Width,obj.Height,self.ww[-1])
+            shape = EM.makeSegShape(n1,n2,obj.Width,obj.Height,self.ww[-1])
             shapes.append(shape)
-            # now we must calculate the cross-section orientation 
+            # now we must calculate the cross-section orientation
             # of the next segment, i.e. update 'ww'
             if i < len(self.nodeCoords)-1:
                 n1 = n2
-                n2 = getAbsCoordBodyPart(obj.Base,self.nodeCoords[i+1])
+                n2 = EM.getAbsCoordBodyPart(obj.Base,self.nodeCoords[i+1])
                 vNext = n2-n1
                 # get angle in radians
                 angle = vPrev.getAngle(vNext)
                 # if the angle is actually greater than EMFHSEGMENT_PARTOL (i.e. the segments are not co-linear
                 # or almost co-linear)
-                if angle*FreeCAD.Units.Radian > EMFHSEGMENT_PARTOL:
+                if angle*FreeCAD.Units.Radian > EM.EMFHSEGMENT_PARTOL:
                     normal = vPrev.cross(vNext)
                     # rotate 'ww'
                     ww = DraftVecUtils.rotate(self.ww[-1],angle,normal)
@@ -314,14 +312,14 @@ class _FHPath:
                     # check if we can safely remove the extra nodes from the Document;
                     # this can be done only if they do not belong to any other object.
                     # So if the 'InList' member contains one element only, this is
-                    # the parent FHPath (we actually check for zero as well, even if 
-                    # this should never happen), so we can remove the FHNode 
+                    # the parent FHPath (we actually check for zero as well, even if
+                    # this should never happen), so we can remove the FHNode
                     if len(node.InList) <= 1:
                         node.Document.removeObject(node.Name)
         # and finally correct node positions
         for node, nodeCoord in zip(nodes, self.nodeCoords):
             # only if node position is not correct, change it
-            if (node.Proxy.getAbsCoord()-nodeCoord).Length > EMFHSEGMENT_LENTOL:
+            if (node.Proxy.getAbsCoord()-nodeCoord).Length > EM.EMFHSEGMENT_LENTOL:
                 node.Proxy.setAbsCoord(nodeCoord)
         # only if we modified the list of nodes, re-assign it to the FHPath
         if modified:
@@ -330,7 +328,7 @@ class _FHPath:
         if shape:
             obj.Shape = shape
         #FreeCAD.Console.PrintWarning("_FHPath execute() ends\n") #debug
-    
+
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
     '''
@@ -349,7 +347,7 @@ class _FHPath:
                         if obj.Base.Shape.isValid():
                             self.execute(obj)
         #FreeCAD.Console.PrintWarning("_FHPath onChanged(" + str(prop)+") ends\n") #debug
-            
+
     def serialize(self,fid):
         ''' Serialize the object to the 'fid' file descriptor
     '''
@@ -360,7 +358,7 @@ class _FHPath:
                     fid.write(" w=" + str(self.Object.Width.Value) + " h=" + str(self.Object.Height.Value))
                     if self.Object.Sigma > 0:
                         fid.write(" sigma=" + str(self.Object.Sigma))
-                    if self.ww[index].Length >= EMFHSEGMENT_LENTOL:
+                    if self.ww[index].Length >= EM.EMFHSEGMENT_LENTOL:
                         fid.write(" wx=" + str(self.ww[index].x) + " wy=" + str(self.ww[index].y) + " wz=" + str(self.ww[index].z))
                     if self.Object.nhinc > 0:
                         fid.write(" nhinc=" + str(self.Object.nhinc))
@@ -382,7 +380,7 @@ class _FHPath:
     def __setstate__(self,state):
         if state:
             self.Type = state
-  
+
 class _ViewProviderFHPath:
     def __init__(self, obj):
         ''' Set this object to the proxy object of the actual view provider '''
@@ -440,7 +438,7 @@ class _CommandFHPath:
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPath","FHPath"),
                 'Accel': "E, T",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHPath","Creates a Path object (set of connected FastHenry segments) from a selected base object (sketch, wire or any shape containing edges)")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 

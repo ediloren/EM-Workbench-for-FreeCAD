@@ -43,7 +43,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -54,18 +54,18 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHPort(nodePos=None,nodeNeg=None,name='FHPort'):
     ''' Creates a FastHenry port ('.external' statement in FastHenry)
-    
+
         'nodePos' is the positive node FHNode object
         'nodeNeg' is the negative node FHNode object
         'name' is the name of the object
-        
+
     Example:
         port = makeFHPort(App.ActiveDocument.FHNode,App.ActiveDocument.FHNode001)
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _FHPort 
+    # this adds the relevant properties to the object
+    #'obj' (e.g. 'Base' property) making it a _FHPort
     _FHPort(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
@@ -78,7 +78,7 @@ def makeFHPort(nodePos=None,nodeNeg=None,name='FHPort'):
     # check if 'nodeNeg' is a FHNode, and if so, assign it as port end (negative) node
     if nodeNeg:
         if Draft.getType(nodeNeg) == "FHNode":
-            obj.NodeNeg = nodeNeg            
+            obj.NodeNeg = nodeNeg
     # return the newly created Python object
     return obj
 
@@ -95,7 +95,7 @@ class _FHPort:
         self.Object = obj
 
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute() 
+        ''' this method is mandatory. It is called on Document.recompute()
     '''
         if obj.NodePos == None:
             return
@@ -109,9 +109,9 @@ class _FHPort:
             return
         if obj.NodePos == obj.NodeNeg:
             FreeCAD.Console.PrintWarning(translate("EM","NodePos and NodeNeg coincide. Cannot create a port."))
-            return            
+            return
         # and finally, if everything is ok, make and assign the shape
-        self.assignShape(obj)    
+        self.assignShape(obj)
 
     def assignShape(self, obj):
         ''' Compute and assign the shape to the object 'obj' '''
@@ -144,8 +144,8 @@ class _FHPort:
         cone = Part.makeCone(0.2 * length * 0.27, 0.0, 0.2 * length, base, direction, 360)
         # add the compound representing the arrow
         arrow = Part.makeCompound([line, cone])
-        return arrow   
-    
+        return arrow
+
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
     '''
@@ -155,7 +155,7 @@ class _FHPort:
             # members of the class, so __getstate__() and __setstate__() skip them);
             # so we must "re-attach" (re-create) the 'self.Object'
             self.Object = obj
-            
+
     def serialize(self,fid):
         ''' Serialize the object to the 'fid' file descriptor
     '''
@@ -216,7 +216,7 @@ class _ViewProviderFHPort:
 
     def __setstate__(self,state):
         return None
-        
+
 class _CommandFHPort:
     ''' The EM FastHenry Port (FHPort) command definition
 '''
@@ -225,7 +225,7 @@ class _CommandFHPort:
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPort","FHPort"),
                 'Accel': "E, P",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHPort","Creates a FastHenry Port object from two FHNodes")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 

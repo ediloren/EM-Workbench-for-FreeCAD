@@ -37,10 +37,10 @@ EMVHPORT_SIDESTRS = ['+x', '-x', '+y', '-y', '+z', '-z']
 
 import FreeCAD, FreeCADGui, Part, Draft, DraftGeomUtils, os
 import DraftVecUtils
-from EM_Globals import getVHSolver
 from FreeCAD import Vector
 import time
 from pivy import coin
+import EM
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -49,7 +49,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -60,10 +60,10 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeVHPortFromSel(selection=[]):
     ''' Creates a VoxHenry Port from the selection
-    
+
         'selection' is a selection object (from getSelectionEx() )
             The selection object must contain at least two faces
-    
+
     Example:
         port = makeVHPortFromSel(FreeCADGui.Selection.getSelectionEx())
 '''
@@ -84,12 +84,12 @@ def makeVHPortFromSel(selection=[]):
             mid = int(real_faces_len / 2)
             port = makeVHPort(real_faces[0:mid],real_faces[mid:real_faces_len])
     if port is None:
-       FreeCAD.Console.PrintWarning(translate("EM","No faces selected for the creation of a VHPort (need at least two). Nothing done.")) 
+       FreeCAD.Console.PrintWarning(translate("EM","No faces selected for the creation of a VHPort (need at least two). Nothing done."))
     return port
-    
+
 def makeVHPort(posFaces=None,negFaces=None,name='VHPort'):
     ''' Creates a VoxHenry Port (a set of two voxelized faces, representing the positive and negative contacts)
-    
+
         'posFaces' is a list of faces of a 3D solid object that is forming the positive
             contact of the port. If no 'posFace' is given, the user must assign a list
             later on, to be able to use this object.
@@ -97,14 +97,14 @@ def makeVHPort(posFaces=None,negFaces=None,name='VHPort'):
             contact of the port. If no 'negFace' is given, the user must assign a list
             later on, to be able to use this object.
         'name' is the name of the object
-    
+
     Example:
         port = makeVHPort(myPosFaces, myNegFaces)
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _VHPort 
+    # this adds the relevant properties to the object
+    #'obj' (e.g. 'Base' property) making it a _VHPort
     _VHPort(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
@@ -172,7 +172,7 @@ class _VHPort:
             self.flagVoxelizationInvalid()
 
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute() 
+        ''' this method is mandatory. It is called on Document.recompute()
     '''
         #FreeCAD.Console.PrintWarning("_VHPort execute()\n") #debug
         # if no faces were assigned to the port, exit
@@ -182,7 +182,7 @@ class _VHPort:
         # Check if the user selected to see the voxelization, and if the voxelization exists
         if obj.ShowVoxels == True:
             # get the VHSolver object
-            solver = getVHSolver()
+            solver = EM.getVHSolver()
             if solver is not None:
                 gbbox = solver.Proxy.getGlobalBBox()
                 delta = solver.Proxy.getDelta()
@@ -223,11 +223,11 @@ class _VHPort:
 
     def getFaces(self,faceSubObjs):
         ''' Get the face objects from an App::PropertyLinkSubList
-        
+
             'faceSubObjs' an App::PropertyLinkSubList list of objects and face names. Each element of the list
                 has the format (Part::Feature, ('FaceXXX',)) where XXX is the face number.
                 The tuple ('FaceXXX',) may also contain multiple face names.
-                
+
             Returns a list of face objects
     '''
         faces = []
@@ -242,12 +242,12 @@ class _VHPort:
 
     def createVoxelShell(self,contacts,gbbox,delta,voxelSpace=None):
         ''' Creates a shell composed by the external faces of a voxelized port.
-        
+
             'contacts' is the list of contacts (see voxelizeContact() for the format)
             'gbbox' (FreeCAD.BoundBox) is the overall bounding box
             'delta' is the voxels size length
-            'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space 
-            
+            'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space
+
             Remark: the VHPort must have already been voxelized
     '''
         if voxelSpace is None:
@@ -287,12 +287,12 @@ class _VHPort:
 
     def createVoxelShellFastCoin(self,shapePoints,contacts,gbbox,delta,voxelSpace=None):
         ''' Creates a shell composed by the external faces of a voxelized port.
-        
+
             'contacts' is the list of contacts (see voxelizeContact() for the format)
             'gbbox' (FreeCAD.BoundBox) is the overall bounding box
             'delta' is the voxels size length
-            'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space 
-            
+            'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space
+
             Remark: the VHPort must have already been voxelized
     '''
         if voxelSpace is None:
@@ -329,14 +329,14 @@ class _VHPort:
 
     def voxelizePort(self):
         ''' Voxelize the port object, i.e. find all the voxel faces belonging to the port
-            
+
             The two list of voxel faces are assigned to internal variables
     '''
         if len(self.Object.PosFaces) == 0 and len(self.Object.NegFaces) == 0:
             FreeCAD.Console.PrintWarning(translate("EM","Cannot voxelize port, no faces assigned to the port\n"))
             return
         # get the VHSolver object
-        solver = getVHSolver()
+        solver = EM.getVHSolver()
         if solver is None:
              return
         FreeCAD.Console.PrintMessage(translate("EM","Starting voxelization of port ") + self.Object.Label + "...\n")
@@ -365,7 +365,7 @@ class _VHPort:
     def voxelizeContact(self,faceSubobjs,gbbox,delta,deltadist,voxelSpace=None):
         ''' Find the voxel surface sides corresponding to the given contact surface
             (face) of an object. The object must have already been voxelized.
-            
+
             'face' is the object face
             'condIndex' (integer) is the index of the object to which the face belongs.
                     It defines the object conductivity.
@@ -373,11 +373,11 @@ class _VHPort:
             'delta' is the voxels size length
             'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space
             'createShell' (bool) creates a shell out of the contact faces
-            
+
             Returns a list of surfaces in the format x,y,z,voxside (all integers) repeated n times where
             x, y, z are the voxel position indexes, while voxside is '+x', '-x',
             '+y', '-y', '+z', '-z' according the the impacted surface of the voxel.
-            The list is flat to allow it to be stored in a PropertyIntegerList 
+            The list is flat to allow it to be stored in a PropertyIntegerList
     '''
         if voxelSpace is None:
             return []
@@ -416,7 +416,7 @@ class _VHPort:
         testVertex = Part.Vertex(vec)
         # this is half the side of the voxel
         halfdelta = delta/2.0
-        # array to find the six neighbors 
+        # array to find the six neighbors
         sides = [(1,0,0), (-1,0,0), (0,1,0), (0,-1,0), (0,0,1), (0,0,-1)]
         # index of the sides, order is ['+x', '-x', '+y', '-y', '+z', '-z']
         sideStrs = range(6)
@@ -462,7 +462,7 @@ class _VHPort:
                 vbase.y += delta
             vbase.x += delta
         return contactList
-         
+
     def flagVoxelizationInvalid(self):
         ''' Flags the voxelization as invalid
     '''
@@ -471,14 +471,14 @@ class _VHPort:
 
     def getBaseObj(self):
         ''' Retrieves the Base object.
-        
+
             Returns the Base object.
     '''
         return self.Object.Base
 
     def getCondIndex(self):
         ''' Retrieves the conductor index.
-        
+
             Returns the int16 conductor index.
     '''
         return self.Object.CondIndex
@@ -493,7 +493,7 @@ class _VHPort:
     '''
         # index of the sides, order is ['+x', '-x', '+y', '-y', '+z', '-z']
         sideStrs = range(6)
-        
+
         if self.Object.isVoxelized == True:
             fid.write("* Port " + str(self.Object.Label) + "\n")
             name = "N " + str(self.Object.Label) + " P "
@@ -505,13 +505,13 @@ class _VHPort:
 
     def serializeContact(self,fid,name,contacts):
         ''' Serialize the contact to the 'fid' file descriptor
-        
+
         'contacts' is the list of contacts (see voxelizeContact() for the format)
-        
+
     '''
         for contactIndex in range(0,len(contacts),4):
             # remark: VoxHenry voxel tensor is 1-based, not 0-based. Must add 1
-            fid.write(name + " " + str(contacts[contactIndex+0]+1) + " " + str(contacts[contactIndex+1]+1) + " " + str(contacts[contactIndex+2]+1) + " " + EMVHPORT_SIDESTRS[contacts[contactIndex+3]] + "\n") 
+            fid.write(name + " " + str(contacts[contactIndex+0]+1) + " " + str(contacts[contactIndex+1]+1) + " " + str(contacts[contactIndex+2]+1) + " " + EMVHPORT_SIDESTRS[contacts[contactIndex+3]] + "\n")
 
     def __getstate__(self):
         # JSON does not understand FreeCAD.Vector, so need to convert to tuples
@@ -528,7 +528,7 @@ class _VHPort:
             self.negContactShapePoints = dictForJSON['nsp']
             self.posContactShapePoints = dictForJSON['psp']
             self.Type = dictForJSON['type']
-  
+
 class _ViewProviderVHPort:
     def __init__(self, vobj):
         ''' Set this object to the proxy object of the actual view provider '''
@@ -543,7 +543,7 @@ class _ViewProviderVHPort:
         vobj.Proxy = self
         self.VObject = vobj
         self.Object = vobj.Object
-        
+
     def attach(self, vobj):
         ''' Setup the scene sub-graph of the view provider, this method is mandatory '''
         # on restore, self.Object is not there anymore (JSON does not serialize complex objects
@@ -605,18 +605,18 @@ class _ViewProviderVHPort:
         self.switch.addChild(group1Face)
         group1Face.addChild(self.materialPos)
         group1Face.addChild(self.style1)
-        group1Face.addChild(self.dataPos)        
+        group1Face.addChild(self.dataPos)
         group1Face.addChild(self.facePos)
         group1Face.addChild(self.materialNeg)
         group1Face.addChild(self.style1)
-        group1Face.addChild(self.dataNeg)        
+        group1Face.addChild(self.dataNeg)
         group1Face.addChild(self.faceNeg)
         self.VObject.RootNode.addChild(sep)
         #FreeCAD.Console.PrintMessage("ViewProvider attach() completed\n")
         return
-        
+
     def updateData(self, fp, prop):
-        ''' If a property of the data object has changed we have the chance to handle this here 
+        ''' If a property of the data object has changed we have the chance to handle this here
             'fp' is the handled feature (the object)
             'prop' is the name of the property that has changed
     '''
@@ -690,7 +690,7 @@ class _ViewProviderVHPort:
     def getDefaultDisplayMode(self):
         ''' Return the name of the default display mode. It must be defined in getDisplayModes. '''
         return "Flat Lines"
-        
+
     def getIcon(self):
         ''' Return the icon which will appear in the tree view. This method is optional
         and if not defined a default icon is shown.
@@ -711,7 +711,7 @@ class _CommandVHPort:
                 'MenuText': QT_TRANSLATE_NOOP("EM_VHPort","VHPort"),
                 'Accel': "E, O",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_VHPort","Creates a VoxHenry Port object from a set of faces")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 

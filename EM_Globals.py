@@ -51,19 +51,19 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
     # \endcond
-    
+
 def getAbsCoordBodyPart(obj,position):
     ''' Retrieve the absolute coordinates of a point belonging to an object, even if in a Body or Part
 
         'obj': object to which the 'position' is relative
         'position': FreeCAD.Vector 3D position relative to objects that contain 'obj'
             (Note: 'position' is NOT relative to the 'obj.Placement', only to the containers)
-        
+
         return value: FreeCAD.Vector 3D absolute position
 '''
     if obj == None:
@@ -85,7 +85,7 @@ def makeSegShape(n1,n2,width,height,ww):
         'width': segment width
         'height': segment height
         'ww': cross-section direction (along width)
-        
+
         Returns the created Shape
 '''
     # do not accept coincident nodes
@@ -97,8 +97,8 @@ def makeSegShape(n1,n2,width,height,ww):
     wh = (ww.cross(wl))
     # if cross-section is not defined, by default the width vector
     # is assumed to lie in x-y plane perpendicular to the length.
-    # If the length direction is parallel to the z-axis, then 
-    # the width is assumed along the x-axis. 
+    # If the length direction is parallel to the z-axis, then
+    # the width is assumed along the x-axis.
     # The same is done if 'ww' has been defined parallel to 'wl'
     if ww.Length < EMFHSEGMENT_LENTOL or wh.Length < EMFHSEGMENT_LENTOL:
         # if length parallel to the z-axis (note that getAngle() always returns a value
@@ -150,14 +150,14 @@ def makeSegShape(n1,n2,width,height,ww):
     face6 = Part.Face(poly)
     # create a shell. Does not need to be solid.
     segShell = Part.makeShell([face1,face2,face3,face4,face5,face6])
-    return segShell   
+    return segShell
 
 def getVHSolver(createIfNotExisting=False):
     ''' Retrieves the VHSolver object.
-    
+
         'createIfNotExisting' if True forces the creation of a VHSolver object,
             if not already existing
-            
+
         Returns the VHSolver object of the current Document. If more than one VHSolver object is present,
         return the first one.
 '''

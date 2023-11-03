@@ -33,7 +33,7 @@ __url__ = "http://www.fastfieldsolvers.com"
 #
 # default node color
 EMFHPLANEHOLE_TYPES = ["Point", "Rect", "Circle"]
-EMFHPLANEHOLE_DEFTYPE = "Point" 
+EMFHPLANEHOLE_DEFTYPE = "Point"
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
 from FreeCAD import Vector
@@ -45,7 +45,7 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt, utf8_decode=False):
+    def translate(ctxt,txt):
         return txt
     def QT_TRANSLATE_NOOP(ctxt,txt):
         return txt
@@ -56,7 +56,7 @@ iconPath = os.path.join( __dir__, 'Resources' )
 
 def makeFHPlaneHole(baseobj=None,X=0.0,Y=0.0,Z=0.0,holetype=None,length=None,width=None,radius=None,name='FHPlaneHole'):
     ''' Creates a FastHenry conductive plane hole (within a uniform plane 'G' statement in FastHenry)
-    
+
         'baseobj' is the point object whose position is used as base for the FNNode.
             It has priority over X,Y,Z.
             If no 'baseobj' is given, X,Y,Z are used as coordinates
@@ -71,17 +71,17 @@ def makeFHPlaneHole(baseobj=None,X=0.0,Y=0.0,Z=0.0,holetype=None,length=None,wid
             in case of rectangular "Rect" hole
         'radius' is the radius of the hole, in case of circular "Circle" hole
         'name' is the name of the object
-    
+
         The FHPlaneHole has to be used only within a FHPlane object. The FHPlaneHole
         will be taken as child by the FHPlane.
-    
+
     Example:
         hole = makeFHPlaneHole(X=1.0,Y=1.0,Z=0.0,holetype="Rect",length=1.0,width=2.0)
 '''
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object 
-    #'obj' (e.g. 'Base' property) making it a _FHNode 
+    # this adds the relevant properties to the object
+    #'obj' (e.g. 'Base' property) making it a _FHNode
     _FHPlaneHole(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
@@ -136,9 +136,9 @@ class _FHPlaneHole:
         # from within the class
         self.Object = obj
         obj.Type = EMFHPLANEHOLE_TYPES
-        
+
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute() 
+        ''' this method is mandatory. It is called on Document.recompute()
 '''
         # create a shape corresponding to the type of hole
         shape = None
@@ -181,7 +181,7 @@ class _FHPlaneHole:
                 shape = Part.Face(wire)
         if shape:
             obj.Shape = shape
-        
+
     def onChanged(self, obj, prop):
         ''' take action if an object property 'prop' changed
 '''
@@ -191,7 +191,7 @@ class _FHPlaneHole:
             # members of the class, so __getstate__() and __setstate__() skip them);
             # so we must "re-attach" (re-create) the 'self.Object'
             self.Object = obj
-        
+
     def serialize(self,fid):
         ''' Serialize the object to the 'fid' file descriptor
 '''
@@ -214,20 +214,20 @@ class _FHPlaneHole:
             # hole rect (x1,y1,z1,x2,y2,z2)
             fid.write("+         hole rect (" + str(pos.x) + "," + str(pos.y) + "," + str(pos.z) + ",")
             fid.write(str(point2.x) + "," + str(point2.y) + "," + str(point2.z) + ")\n")
-        elif self.Object.Type == "Circle":                    
+        elif self.Object.Type == "Circle":
             # hole circle (x,y,z,r)
             fid.write("+         hole circle (" + str(pos.x) + "," + str(pos.y) + "," + str(pos.z) + "," + str(self.Object.Radius.Value) + ")")
         fid.write("\n")
 
     def getAbsCoord(self):
-        ''' Get a FreeCAD.Vector containing the reference point coordinates 
+        ''' Get a FreeCAD.Vector containing the reference point coordinates
             in the absolute reference system
 '''
         return self.Object.Placement.multVec(Vector(self.Object.X, self.Object.Y, self.Object.Z))
 
     def getRelCoord(self):
         ''' Get a FreeCAD.Vector containing the hole coordinates relative to the FHPlaneHole Placement
-        
+
         These coordinates correspond to (self.Object.X, self.Object.Y, self.Object.Z),
         that are the same as self.Object.Placement.inverse().multVec(reference_point_pos))
 '''
@@ -235,10 +235,10 @@ class _FHPlaneHole:
 
     def setRelCoord(self,rel_coord,placement=None):
         ''' Sets the hole position relative to the placement
-        
+
         'rel_coord': FreeCAD.Vector containing the hole coordinates relative to the FHPlaneHole Placement
         'placement': a new FHPlaneHole placement. If 'None', the placement is not changed
-        
+
         Remark: the function will not recalculate() the object (i.e. change of position is not visible
         just by calling this function)
 '''
@@ -252,7 +252,7 @@ class _FHPlaneHole:
 
     def setAbsCoord(self,abs_coord,placement=None):
         ''' Sets the absolute reference point position, considering the object placement, and in case forcing a new placement
-        
+
         'abs_coord': FreeCAD.Vector containing the hole coordinates in the absolute reference system
         'placement': a new placement. If 'None', the placement is not changed
 
@@ -274,7 +274,7 @@ class _FHPlaneHole:
     def __setstate__(self,state):
         if state:
             self.Type = state
-                  
+
 class _ViewProviderFHPlaneHole:
     def __init__(self, obj):
         ''' Set this object to the proxy object of the actual view provider '''
@@ -322,7 +322,7 @@ class _CommandFHPlaneHole:
                 'MenuText': QT_TRANSLATE_NOOP("EM_FHPlaneHole","FHPlaneHole"),
                 'Accel': "E, H",
                 'ToolTip': QT_TRANSLATE_NOOP("EM_FHPlaneHole","Creates a FastHenry conductive plane Hole object from scratch or from a selected object (point)")}
-                
+
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None
 
