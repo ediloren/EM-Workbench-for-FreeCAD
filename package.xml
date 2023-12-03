@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+  <name>ElectroMagnetic</name>
+  <description>This project is dedicated to building an ElectroMagnetic workbench for FreeCAD, with support for inductance and capacitance solvers.</description>
+  <version>2.0.1</version>
+  <date>2023-11-05</date>
+  <maintainer email="enrico dot di_lorenzo at fastfieldsolvers dot com">Enrico Di Lorenzo</maintainer>
+  <license file="LICENSE">LGPLv2.1</license>
+  <url type="repository" branch="main">https://github.com/chennes/FreeCAD-Package</url>
+  <url type="website">https://github.com/ediloren/EM-Workbench-for-FreeCAD</url>
+  <url type="bugtracker">https://github.com/ediloren/EM-Workbench-for-FreeCAD/issues</url>
+  <icon>Resources/EMWorkbench.svg</icon>
+
+  <content>
+    <workbench>
+      <classname>ElectroMagnetic</classname>
+      <subdirectory>./</subdirectory>
+    </workbench>
+  </content>
+
+</package>
