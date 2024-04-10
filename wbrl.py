@@ -21,6 +21,8 @@
 #*                                                                         *
 #***************************************************************************
 
+from importlib import reload
+
 import EM
 import EM_FHNode
 import EM_FHSegment

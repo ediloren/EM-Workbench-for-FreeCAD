@@ -337,7 +337,7 @@ class _FHPlane:
         # exists, i.e. has not been removed due to holes in the plane.
         # The number of nodes is equal to the number of segments along the edge plus one;
         # (note that 'obj.seg1' refers to the # of segment parallel to the length, 'obj.seg2' parallel to the width)
-        nodes=np.full((obj.seg1+1,obj.seg2+1), True, np.bool)
+        nodes=np.full((obj.seg1+1,obj.seg2+1), True, bool)
         # find segment lengths
         seg1len=length/obj.seg1
         seg2len=width/obj.seg2

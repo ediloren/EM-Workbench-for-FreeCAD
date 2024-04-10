@@ -493,7 +493,7 @@ def meshSolidWithSegments(obj=None,delta=1.0,deltaX=0.0,deltaY=0.0,deltaZ=0.0,st
     stepsZ = int(bbox.ZLength/deltaZ)
     deltaSideZ = (bbox.ZLength - deltaZ * stepsZ) / 2.0
     # create the 3D array of nodes
-    isNode=np.full((stepsX+1,stepsY+1,stepsZ+1), False, np.bool)
+    isNode=np.full((stepsX+1,stepsY+1,stepsZ+1), False, bool)
     # and now iterate to find which node is inside the object 'obj'
     pos_x = bbox.XMin + deltaSideX
     for step_x in range(0,stepsX+1):
@@ -591,7 +591,7 @@ def meshSolidWithVoxels(obj=None,delta=1.0):
     deltaSideZ = (bbox.ZLength - delta * stepsZ) / 2.0
     print("X="+str(stepsX)+" Y="+str(stepsY)+" Z="+str(stepsZ)+" tot="+str(stepsX*stepsY*stepsZ))
     # create the 3D array of nodes
-    isNode=np.full((stepsX+1,stepsY+1,stepsZ+1), False, np.bool)
+    isNode=np.full((stepsX+1,stepsY+1,stepsZ+1), False, bool)
     # and now iterate to find which point is inside the object 'obj'
     pos_x = bbox.XMin + deltaSideX
     for step_x in range(0,stepsX+1):
