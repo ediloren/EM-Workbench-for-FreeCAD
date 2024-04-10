@@ -26,17 +26,21 @@ __title__="FreeCAD E.M. Workbench VoxHenry Conductor Class"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
 
+import math
+
 # copper conductivity 1/(m*Ohms)
 EMVHSOLVER_DEF_SIGMA = 5.8e7
 
 import FreeCAD, FreeCADGui, Part, Draft, DraftGeomUtils, os
 import DraftVecUtils
 import Mesh
+import MeshPart
 from FreeCAD import Vector
 import numpy as np
 import time
 from pivy import coin
 import EM
+from scipy import ndimage
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -114,6 +118,143 @@ def makeVHConductor(baseobj=None,name='VHConductor'):
             obj.Base.ViewObject.hide()
     # return the newly created Python object
     return obj
+
+
+def intersects_box(triangle, box_center, box_extents):
+    X, Y, Z = 0, 1, 2
+
+    # Translate triangle as conceptually moving AABB to origin
+    v0 = triangle[0] - box_center
+    v1 = triangle[1] - box_center
+    v2 = triangle[2] - box_center
+
+    # Compute edge vectors for triangle
+    f0 = triangle[1] - triangle[0]
+    f1 = triangle[2] - triangle[1]
+    f2 = triangle[0] - triangle[2]
+
+    ## region Test axes a00..a22 (category 3)
+
+    # Test axis a00
+    a00 = np.array([0, -f0[Z], f0[Y]])
+    p0 = np.dot(v0, a00)
+    p1 = np.dot(v1, a00)
+    p2 = np.dot(v2, a00)
+    r = box_extents[Y] * abs(f0[Z]) + box_extents[Z] * abs(f0[Y])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    # Test axis a01
+    a01 = np.array([0, -f1[Z], f1[Y]])
+    p0 = np.dot(v0, a01)
+    p1 = np.dot(v1, a01)
+    p2 = np.dot(v2, a01)
+    r = box_extents[Y] * abs(f1[Z]) + box_extents[Z] * abs(f1[Y])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    # Test axis a02
+    a02 = np.array([0, -f2[Z], f2[Y]])
+    p0 = np.dot(v0, a02)
+    p1 = np.dot(v1, a02)
+    p2 = np.dot(v2, a02)
+    r = box_extents[Y] * abs(f2[Z]) + box_extents[Z] * abs(f2[Y])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    # Test axis a10
+    a10 = np.array([f0[Z], 0, -f0[X]])
+    p0 = np.dot(v0, a10)
+    p1 = np.dot(v1, a10)
+    p2 = np.dot(v2, a10)
+    r = box_extents[X] * abs(f0[Z]) + box_extents[Z] * abs(f0[X])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    # Test axis a11
+    a11 = np.array([f1[Z], 0, -f1[X]])
+    p0 = np.dot(v0, a11)
+    p1 = np.dot(v1, a11)
+    p2 = np.dot(v2, a11)
+    r = box_extents[X] * abs(f1[Z]) + box_extents[Z] * abs(f1[X])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    # Test axis a12
+    a11 = np.array([f2[Z], 0, -f2[X]])
+    p0 = np.dot(v0, a11)
+    p1 = np.dot(v1, a11)
+    p2 = np.dot(v2, a11)
+    r = box_extents[X] * abs(f2[Z]) + box_extents[Z] * abs(f2[X])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    # Test axis a20
+    a20 = np.array([-f0[Y], f0[X], 0])
+    p0 = np.dot(v0, a20)
+    p1 = np.dot(v1, a20)
+    p2 = np.dot(v2, a20)
+    r = box_extents[X] * abs(f0[Y]) + box_extents[Y] * abs(f0[X])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    # Test axis a21
+    a21 = np.array([-f1[Y], f1[X], 0])
+    p0 = np.dot(v0, a21)
+    p1 = np.dot(v1, a21)
+    p2 = np.dot(v2, a21)
+    r = box_extents[X] * abs(f1[Y]) + box_extents[Y] * abs(f1[X])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    # Test axis a22
+    a22 = np.array([-f2[Y], f2[X], 0])
+    p0 = np.dot(v0, a22)
+    p1 = np.dot(v1, a22)
+    p2 = np.dot(v2, a22)
+    r = box_extents[X] * abs(f2[Y]) + box_extents[Y] * abs(f2[X])
+    if (max(-max(p0, p1, p2), min(p0, p1, p2))) > r:
+        return False
+
+    ## endregion
+
+    ## region Test the three axes corresponding to the face normals of AABB b (category 1)
+
+    # Exit if...
+    # ... [-extents.X, extents.X] and [min(v0.X,v1.X,v2.X), max(v0.X,v1.X,v2.X)] do not overlap
+    if max(v0[X], v1[X], v2[X]) < -box_extents[X] or min(v0[X], v1[X], v2[X]) > box_extents[X]:
+        return False
+
+    # ... [-extents.Y, extents.Y] and [min(v0.Y,v1.Y,v2.Y), max(v0.Y,v1.Y,v2.Y)] do not overlap
+    if max(v0[Y], v1[Y], v2[Y]) < -box_extents[Y] or min(v0[Y], v1[Y], v2[Y]) > box_extents[Y]:
+        return False
+
+    # ... [-extents.Z, extents.Z] and [min(v0.Z,v1.Z,v2.Z), max(v0.Z,v1.Z,v2.Z)] do not overlap
+    if max(v0[Z], v1[Z], v2[Z]) < -box_extents[Z] or min(v0[Z], v1[Z], v2[Z]) > box_extents[Z]:
+        return False
+
+    ## endregion
+
+    ## region Test separating axis corresponding to triangle face normal (category 2)
+
+    plane_normal = np.cross(f0, f1)
+    plane_distance = np.abs(np.dot(plane_normal, v0))
+
+    # Compute the projection interval radius of b onto L(t) = b.c + t * p.n
+    r = box_extents[X] * abs(plane_normal[X]) + box_extents[Y] * abs(plane_normal[Y]) + box_extents[Z] * abs(
+        plane_normal[Z])
+
+    # Intersection occurs when plane distance falls within [-r,+r] interval
+    if plane_distance > r:
+        return False
+
+    ## endregion
+
+    return True
+
+
+def get_voxel_center(bb_min, voxel, delta):
+    return bb_min + (voxel + 0.5) * delta
 
 class _VHConductor:
     '''The EM VoxHenry Conductor object'''
@@ -541,65 +682,199 @@ class _VHConductor:
         ''' Voxelize the Base (solid) object. The function will modify the 'voxelSpace'
             by marking with 'CondIndex' all the voxels that sample the Base object
             as internal.
-    '''
+'''
+        X, Y, Z = 0, 1, 2
         if self.Object.Base is None:
             return
-        if not hasattr(self.Object.Base,"Shape"):
+        if not hasattr(self.Object.Base, "Shape"):
             return
         # get the VHSolver object
         solver = EM.getVHSolver()
         if solver is None:
-             return
-        FreeCAD.Console.PrintMessage(translate("EM","Starting voxelization of conductor ") + self.Object.Label + "...\n")
+            return
+        FreeCAD.Console.PrintMessage(translate("EM", "Starting voxelization of conductor ") + self.Object.Label + "...\n")
         # get global parameters from the VHSolver object
         gbbox = solver.Proxy.getGlobalBBox()
+        gbbox_min = np.array((gbbox.XMin, gbbox.YMin, gbbox.ZMin))
+        gbbox_max = np.array((gbbox.XMax, gbbox.YMax, gbbox.ZMax))
         delta = solver.Proxy.getDelta()
         voxelSpace = solver.Proxy.getVoxelSpace()
         if voxelSpace is None:
-            FreeCAD.Console.PrintWarning(translate("EM","VoxelSpace not valid, cannot voxelize conductor\n"))
+            FreeCAD.Console.PrintWarning(translate("EM", "VoxelSpace not valid, cannot voxelize conductor\n"))
             return
         # get this object bbox
         bbox = self.Object.Base.Shape.BoundBox
+        bbox_min = np.array((bbox.XMin, bbox.YMin, bbox.ZMin))
+        bbox_max = np.array((bbox.XMax, bbox.YMax, bbox.ZMax))
         if not gbbox.isInside(bbox):
-            FreeCAD.Console.PrintError(translate("EM","Internal error: conductor bounding box is larger than the global bounding box. Cannot voxelize conductor.\n"))
+            FreeCAD.Console.PrintError(translate("EM", "Internal error: conductor bounding box is larger than the global bounding box. Cannot voxelize conductor.\n"))
             return
         # first of all, must remove all previous instances of the conductor in the voxel space
-        voxelSpace[voxelSpace==self.Object.CondIndex] = 0
+        voxelSpace[voxelSpace == self.Object.CondIndex] = 0
         # now must find the voxel set that contains the object bounding box
         # find the voxel that contains the bbox min point
-        min_x = int((bbox.XMin - gbbox.XMin)/delta)
-        min_y = int((bbox.YMin - gbbox.YMin)/delta)
-        min_z = int((bbox.ZMin - gbbox.ZMin)/delta)
+        local_vs_min = ((bbox_min - gbbox_min)/delta).astype(int)
         # find the voxel that contains the bbox max point
         # (if larger than the voxelSpace, set to voxelSpace max dim,
         # we already verified that 'bbox' fits into 'gbbox')
-        vs_size = voxelSpace.shape
-        max_x = min(int((bbox.XMax - gbbox.XMin)/delta), vs_size[0]-1)
-        max_y = min(int((bbox.YMax - gbbox.YMin)/delta), vs_size[1]-1)
-        max_z = min(int((bbox.ZMax - gbbox.ZMin)/delta), vs_size[2]-1)
+        local_vs_max = np.min((((bbox_max - gbbox_min) / delta).astype(int),
+                              np.array(voxelSpace.shape) - 1),
+                              axis=0)
+        local_vs_size = local_vs_max - local_vs_min + 1
         # if the Base object is a Part::Box, just mark all the voxels
         # inside the bounding box as belonging to the conductor
-        if self.Object.Base.TypeId == "Part::Box":
-            voxelSpace[min_x:max_x,min_y:max_y,min_z:max_z] = self.Object.CondIndex
+        if self.Object.Base.TypeId == "Part::Box" and \
+           self.Object.Base.Placement.Rotation.Angle < 1e-12:
+            box_start = time.perf_counter()
+
+            # Since we want to sample by voxel centre, our minimum/maximum voxel might be off by one in 1, 2, or dimensions.
+            # This would make the voxelized box too big. So check and offset where necessary.
+            # first, assume its correct
+            partbox_min = local_vs_min
+            partbox_max = local_vs_max
+            # get the center coordinates of our assumed min/max voxel
+            min_voxel_center = get_voxel_center(gbbox_min, local_vs_min, delta)
+            max_voxel_center = get_voxel_center(gbbox_min, local_vs_min, delta)
+            # make arrays of booleans
+            min_too_small = min_voxel_center < bbox_min
+            max_too_big = max_voxel_center > bbox_max
+            # offset where required. we should only ever be off by one.
+            partbox_min[min_too_small] += 1
+            partbox_max[max_too_big] -= 1
+
+            voxelSpace[partbox_min[X]:partbox_max[X] + 1,
+                       partbox_min[Y]:partbox_max[Y] + 1,
+                       partbox_min[Z]:partbox_max[Z] + 1] = self.Object.CondIndex
         else:
-            # and now find which voxel is inside the object 'self.Object.Base',
-            # sampling based on the voxel centers
-            voxelIndices = [ (step_x,step_y,step_z) for step_x in range(min_x,max_x+1)
-                                for step_y in range(min_y,max_y+1)
-                                for step_z in range(min_z,max_z+1)
-                                if self.Object.Base.Shape.isInside(Vector(gbbox.XMin + step_x * delta + delta/2.0,
-                                gbbox.YMin + step_y * delta + delta/2.0,
-                                gbbox.ZMin + step_z * delta + delta/2.0),0.0,True)]
-            # mark the relevant voxels with the 'CondIndex'
-            # note that as Python3 zip() returns an iterator, need to build the list of indices explicitly,
-            # but then we need to move this to a tuple to avoid a Python3 warning
-            voxelSpace[tuple([x for x in zip(*voxelIndices)])] = self.Object.CondIndex
+            #  Voxelization is done with the Shape.isInside function, sampled on voxel centers.
+            #  BUT isInside can be expensive, so to minimize calls to isInside:
+            #    1. Make a temporary mesh of the solid
+            #    2. Find the set 'A' of voxels that intersect the mesh
+            #    3. For all voxels in 'A', set (or not) its conductor index based on isInside
+            #    4. Using the voxels 'A', find sets 'B', 'C', ... that are contiguous regions split up by 'A'
+            #    5. For region 'R_' in voxel sets 'B', 'C',...
+            #      a. Set (or not) 'R_' based on a single arbitrary voxel in 'R' with inSide
+            #
+            #  The number of isInside calls should be approximately proportional to the conductor surface area.
+            #  The result should be identical to calling isInside for every voxel.
+
+            voxel_start = time.perf_counter()
+
+            make_mesh_start = time.perf_counter()
+            # make a reasonably fine mesh of the solid
+            meshed = MeshPart.meshFromShape(Shape=self.Object.Base.Shape,
+                                            LinearDeflection=(delta / 5.0),
+                                            AngularDeflection=math.radians(30),
+                                            Relative=False)
+            make_mesh_time = time.perf_counter() - make_mesh_start
+            # FreeCAD.Console.PrintMessage(f"make_mesh_time {make_mesh_time:.1f}, n_facets {meshed.CountFacets}\n")
+
+            # collect all the mesh facet coordinates (these must be triangles)
+            facets = np.zeros((meshed.CountFacets, 3, 3))
+            for index, facet in enumerate(meshed.Facets):
+                facets[index, :, :] = np.array(facet.Points)
+
+            # collect all the voxel-center coordinates
+            voxel_centers = np.zeros((local_vs_size[X], local_vs_size[Y], local_vs_size[Z], 3))
+            for x in range(local_vs_size[X]):
+                for y in range(local_vs_size[Y]):
+                    for z in range(local_vs_size[Z]):
+                        voxel_centers[x, y, z, :] = get_voxel_center(bb_min=gbbox_min,
+                                                                     voxel=np.array((x, y, z)) + local_vs_min,
+                                                                     delta=delta)
+
+            # consider every mesh facet, and check for mesh intersections with voxels
+            intersection_start = time.perf_counter()
+            mesh_intersections = np.zeros(local_vs_size, dtype=bool)
+            half_el_size_eps = delta / 2.0 + 1e-14
+            half_el_size = np.array((half_el_size_eps, half_el_size_eps, half_el_size_eps))
+            for facet_index in range(np.size(facets, 0)):
+                # get facet bounding box
+                facet_bb_min = np.min(facets[facet_index], 0)
+                facet_bb_max = np.max(facets[facet_index], 0)
+
+                # get voxel indices of facet bb points, in conductor-local voxel coordinates
+                facet_min_possible_voxel = np.floor((facet_bb_min - gbbox_min) / delta).astype(int) - local_vs_min
+                facet_max_possible_voxel = np.floor((facet_bb_max - gbbox_min) / delta).astype(int) - local_vs_min
+
+                # facet_min_possible_voxel = grid.get_voxel_containing_point(facet_bb_min) - np.array((1, 1, 1))
+                # facet_min_possible_voxel[facet_min_possible_voxel < 0] = 0  # limit to vox space
+                # facet_max_possible_voxel = grid.get_voxel_containing_point(facet_bb_max) + np.array((1, 1, 1))
+                # facet_max_possible_voxel = np.min(np.stack((facet_max_possible_voxel, max_vox_index)), 0)  # limit to vox space
+                for x in range(facet_min_possible_voxel[X], facet_max_possible_voxel[X] + 1):
+                    for y in range(facet_min_possible_voxel[Y], facet_max_possible_voxel[Y] + 1):
+                        for z in range(facet_min_possible_voxel[Z], facet_max_possible_voxel[Z] + 1):
+                            if mesh_intersections[(x, y, z)]:
+                                continue  # already filled. skip checking again
+
+                            # n_intersection_checks = n_intersection_checks + 1
+                            if intersects_box(triangle=facets[facet_index, :, :],
+                                              box_center=voxel_centers[x, y, z, :],
+                                              box_extents=half_el_size):
+                                mesh_intersections[(x, y, z)] = True
+
+            intersection_end = time.perf_counter() - intersection_start
+            # FreeCAD.Console.PrintMessage(f"intersection time {intersection_end:.1f}\n")
+
+            # Identify contiguous voxel regions
+            region_labels, n_features = ndimage.label(~mesh_intersections)
+            # FreeCAD.Console.PrintMessage(f"regions: {n_features}\n")
+
+            # Check each region
+            for label_index in range(n_features + 1):
+                region_indices = np.nonzero(region_labels == label_index)
+                region_indices_global = (region_indices[X] + local_vs_min[X],
+                                         region_indices[Y] + local_vs_min[Y],
+                                         region_indices[Z] + local_vs_min[Z])
+
+                # special case of label == 0. these are the voxels that intersected with the mesh. check each of these
+                # voxels individually
+                if label_index == 0:
+                    region_voxel_count = np.size(region_indices[0])
+                    progress_bar = FreeCAD.Base.ProgressIndicator()
+                    progress_bar.start(f"Voxelizing {self.Object.Name}...", region_voxel_count)
+                    # FreeCAD.Console.PrintMessage(f"Doing {region_voxel_count} isInside checks...\n")
+                    inside_checks_start = time.perf_counter()
+                    for x, y, z in zip(*region_indices_global):
+                        progress_bar.next(True)  # next(True) -> no cancel button on progress bar
+                        if self.Object.Base.Shape.isInside(Vector(get_voxel_center(bb_min=gbbox_min,
+                                                                                   voxel=np.array((x, y, z)),
+                                                                                   delta=delta)),
+                                                           0.0,  # tolerance
+                                                           True  # check points on faces
+                                                           ):
+                            voxelSpace[(x, y, z)] = self.Object.CondIndex
+                    inside_checks_end = time.perf_counter()
+                    # FreeCAD.Console.PrintMessage(f"Average isInside time {1000*(inside_checks_end - inside_checks_start)/region_voxel_count:.3g} milliseconds\n")
+                    progress_bar.stop()
+
+                # a contiguous region of voxels that did NOT intersect with the mesh. these can be set all at once
+                else:
+                    # Check if this whole region should be set by sampling a single voxel
+                    first_voxel_coord = np.array((region_indices_global[X][0],
+                                                  region_indices_global[Y][0],
+                                                  region_indices_global[Z][0]))
+                    if self.Object.Base.Shape.isInside(Vector(get_voxel_center(bb_min=gbbox_min,
+                                                                               voxel=first_voxel_coord,
+                                                                               delta=delta)),
+                                                       0.0,  # tolerance
+                                                       True  # check points on faces
+                                                       ):
+                        # This whole region is part of the conductor
+                        voxelSpace[region_indices_global] = self.Object.CondIndex
+
+            voxel_end = time.perf_counter()
+            n_vox_checks = np.product(local_vs_size)
+            tot_time = voxel_end - voxel_start
+            time_per_check_us = 1000000 * tot_time / n_vox_checks
+            # FreeCAD.Console.PrintMessage(f"time per vox {time_per_check_us:.2f} usec, {n_vox_checks} vox\n")
+            # FreeCAD.Console.PrintMessage(f"tot time {tot_time:.2f} sec\n")
         # flag as voxelized
         self.Object.isVoxelized = True
         # if just voxelized, cannot show voxeld; and if there was an old shell representing
         # the previoius voxelization, must clear it
         self.Object.ShowVoxels = False
-        FreeCAD.Console.PrintMessage(translate("EM","Voxelization of the conductor completed.\n"))
+        FreeCAD.Console.PrintMessage(translate("EM", "Voxelization of the conductor completed.\n"))
 
     def flagVoxelizationInvalid(self):
         ''' Flags the voxelization as invalid
