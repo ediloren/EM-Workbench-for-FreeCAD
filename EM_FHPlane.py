@@ -391,7 +391,7 @@ class _FHPlane:
                     nodes_right = int( (side - offsetX)/seg1len)
                     for nodeX in range(nodes_left,nodes_right+1):
                         # delete node, but only if internal to the plane!
-                        if nodeY+seg1seg2pos[1] >= 0 and nodeY+seg1seg2pos[1] <= obj.seg2 and nodeX+seg1seg2pos[0] >= 0 and nodeX+seg1seg2pos[1] <= obj.seg1:
+                        if nodeY+seg1seg2pos[1] >= 0 and nodeY+seg1seg2pos[1] <= obj.seg2 and nodeX+seg1seg2pos[0] >= 0 and nodeX+seg1seg2pos[0] <= obj.seg1:
                             nodes[nodeX+seg1seg2pos[0], nodeY+seg1seg2pos[1]] = False
             else:
                 FreeCAD.Console.PrintWarning(translate("EM","Unknown hole type in the FHPlane!"))
