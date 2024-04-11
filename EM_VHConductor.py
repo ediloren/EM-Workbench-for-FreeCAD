@@ -864,7 +864,7 @@ class _VHConductor:
                         voxelSpace[region_indices_global] = self.Object.CondIndex
 
             voxel_end = time.perf_counter()
-            n_vox_checks = np.product(local_vs_size)
+            n_vox_checks = np.prod(local_vs_size)
             tot_time = voxel_end - voxel_start
             time_per_check_us = 1000000 * tot_time / n_vox_checks
             # FreeCAD.Console.PrintMessage(f"time per vox {time_per_check_us:.2f} usec, {n_vox_checks} vox\n")
