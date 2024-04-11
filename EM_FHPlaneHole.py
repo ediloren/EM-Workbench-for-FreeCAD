@@ -81,7 +81,7 @@ def makeFHPlaneHole(baseobj=None,X=0.0,Y=0.0,Z=0.0,holetype=None,length=None,wid
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
     # this adds the relevant properties to the object
-    #'obj' (e.g. 'Base' property) making it a _FHNode
+    # 'obj' (e.g. 'Base' property) making it a _FHPlaneHole
     _FHPlaneHole(obj)
     # manage ViewProvider object
     if FreeCAD.GuiUp:
