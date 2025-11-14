@@ -1,34 +1,34 @@
-#***************************************************************************
-#*                                                                         *
-#*   Copyright (c) 2018                                                    *
-#*   Efficient Power Conversion Corporation, Inc.  http://epc-co.com       *
-#*                                                                         *
-#*   Developed by FastFieldSolvers S.R.L. under contract by EPC            *
-#*   http://www.fastfieldsolvers.com                                       *
-#*                                                                         *
-#*   This program is free software; you can redistribute it and/or modify  *
-#*   it under the terms of the GNU Lesser General Public License (LGPL)    *
-#*   as published by the Free Software Foundation; either version 2 of     *
-#*   the License, or (at your option) any later version.                   *
-#*   for detail see the LICENCE text file.                                 *
-#*                                                                         *
-#*   This program is distributed in the hope that it will be useful,       *
-#*   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
-#*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
-#*   GNU Library General Public License for more details.                  *
-#*                                                                         *
-#*   You should have received a copy of the GNU Library General Public     *
-#*   License along with this program; if not, write to the Free Software   *
-#*   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
-#*   USA                                                                   *
-#*                                                                         *
-#***************************************************************************
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# SPDX-FileNotice: Part of the ElectroMagnetic addon.
+
+################################################################################
+#                                                                              #
+#   © 2018 Efficient Power Conversion Corporation, Inc. ( http://epc-co.com )  #
+#                                                                              #
+#   Developed by FastFieldSolvers S.R.L. ( http://www.fastfieldsolvers.com )   #
+#   under contract by Efficient Power Conversion Corporation, Inc.             #
+#                                                                              #
+#   This addon is free software: you can redistribute it and/or modify it      #
+#   under the terms of the GNU Lesser General Public License as published      #
+#   by the Free Software Foundation, either version 2.1 of the License,        #
+#   or (at your option) any later version.                                     #
+#                                                                              #
+#   This addon is distributed in the hope that it will be useful,              #
+#   but WITHOUT ANY WARRANTY; without even the implied warranty                #
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                    #
+#   See the GNU Lesser General Public License for more details.                #
+#                                                                              #
+#   You should have received a copy of the GNU Lesser                          #
+#   General Public License along with this addon.                              #
+#   If not, see https://www.gnu.org/licenses                                   #
+#                                                                              #
+################################################################################
 
 
 import FreeCAD, Mesh, Part, MeshPart, DraftGeomUtils, os
 from FreeCAD import Vector
 import numpy as np
-    
+
 if FreeCAD.GuiUp:
     import FreeCADGui
     from PySide import QtCore, QtGui
@@ -45,7 +45,7 @@ DEF_FOLDER = "."
 
 def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0, nwinc=0, folder=DEF_FOLDER):
     '''Export segments in FastHenry format
-    
+
     The function operates on the selection. The selection must be a sketch, a wire or an edge.
     'filename' is the name of the export file
     'disc' is the maximum number of segments into which curves will be discretized
@@ -60,7 +60,7 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
         If 'w' is negative, it assures that no curve will be discretized if the radius is less than w*3,
             to avoid short thick (overlapping) segments.
     'folder' is the folder in which 'filename' will be saved
-    
+
     Example:
     export_segs("mysegs.inp", folder="C:/temp")
 '''
@@ -69,13 +69,13 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
     # if no valid selection was passed
     if sel == None:
         return
-        
+
     if filename == "":
         filename = sel[0].Label.replace(" ","_") + ".txt"
 
     if not os.path.isdir(folder):
         os.mkdir(folder)
-   
+
     with open(folder + os.sep + filename, 'w') as fid:
 
         fid.write("* Conductor definition file for the following objects\n")
@@ -84,11 +84,11 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
         fid.write("* created using FreeCAD's ElectroMagnetic Workbench\n")
         fid.write("* see http://www.freecad.org and http://www.fastfieldsolvers.com\n")
         fid.write("\n")
-        
+
         # scan objects in selection and export to FastHenry one by one
-        
+
         for obj in sel:
-            
+
             edges_raw = []
             # checking TypeId; cannot check type(obj), too generic
             if obj.TypeId == "Sketcher::SketchObject":
@@ -114,7 +114,7 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
                     # to be implemented?
                     FreeCAD.Console.PrintMessage("Unsupported object type for '" + obj.Label + "', skipping\n")
                     continue
-                
+
             # sort the edges. If the selected path is disconnected, the path will be broken!
             edges = Part.__sortEdges__(edges_raw)
             # TBC: join parts with additional edges, or .equiv-ing them, using distToShape between the obj.Shape
@@ -123,7 +123,7 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
             #v = Part.Vertex(edges[0].Curve.StartPoint)
             #v.Tolerance
             #App.ActiveDocument.Shape.Shape.Vertexes[1].distToShape(App.ActiveDocument.Shape001.Shape.Vertexes[0])
-            
+
             # scan edges and derive nodes
             nodes = []
             for edge in edges:
@@ -161,11 +161,11 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
                     FreeCAD.Console.PrintMessage("Unknown edge: " + str(type(edge.Curve)) + " in '" + obj.Label + "',, skipping\n")
             # now add the very last vertex
             nodes.append(lastvertex)
-            
+
             if len(nodes) < 2:
                 FreeCAD.Console.PrintMessage("Less than two nodes found in '" + obj.Label + "', skipping\n")
                 continue
-            
+
             # start actual object output in FastHenry format
             fid.write("* " + obj.Label + "\n")
             if custDot != "":
@@ -181,12 +181,12 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
                     ext = "E"
                 else:
                     ext = str(i)
-                
+
                 if FHbug == True:
                     fid.write("N" + baseName + ext + " x=" + str(node.x) + " y=" + str(int(node.y)) + " z=" + str(node.z) + "\n")
                 else:
                     fid.write("N" + baseName + ext + " x=" + str(node.x) + " y=" + str(node.y) + " z=" + str(node.z) + "\n")
-            
+
             # and finally segments
             for i in range(0, len(nodes)-1):
                 # extension in the node name must be "S" for the Start node
@@ -202,7 +202,7 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
                     ext2 = "E"
                 else:
                     ext2 = str(i+1)
-               
+
                 fid.write("E" + baseName + "N" + ext1 + "N" + ext2 + " ")
                 fid.write("N" + baseName + ext1 + " " + "N" + baseName + ext2)
                 if w > 0:
@@ -216,12 +216,12 @@ def export_segs(filename="", disc=3, custDot="", FHbug=False, w=0, h=0, nhinc=0,
                 fid.write("\n")
             # blank lines before next object
             fid.write("\n\n")
-        
+
     fid.closed
-    
+
 def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w=0, h=0, nhinc=0, nwinc=0, folder=DEF_FOLDER):
     '''Export segments in FastHenry format
-    
+
     The function operates on the selection. The selection must be a sketch, a wire or an edge.
     Version 2 means it discretizes both curved and straight parts of a path. It also dumps nodes of an underlying GND plane.
     'filename' is the name of the export file
@@ -238,7 +238,7 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
         If 'w' is negative, it assures that no curve will be discretized if the radius is less than w*3,
             to avoid short thick (overlapping) segments.
     'folder' is the folder in which 'filename' will be saved
-    
+
     Example:
     export_segs2("mysegs.inp", folder="C:/temp")
 '''
@@ -247,13 +247,13 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
     # if no valid selection was passed
     if sel == None:
         return
-        
+
     if filename == "":
         filename = sel[0].Label.replace(" ","_") + ".txt"
 
     if not os.path.isdir(folder):
         os.mkdir(folder)
-   
+
     with open(folder + os.sep + filename, 'w') as fid:
 
         fid.write("* Conductor definition file for the following objects\n")
@@ -262,12 +262,12 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
         fid.write("* created using FreeCAD's ElectroMagnetic Workbench\n")
         fid.write("* see http://www.freecad.org and http://www.fastfieldsolvers.com\n")
         fid.write("\n")
-        
+
 
         # scan objects in selection and export to FastHenry one by one
-        gndplane_nodes = []        
+        gndplane_nodes = []
         for obj in sel:
-            
+
             edges_raw = []
             # checking TypeId; cannot check type(obj), too generic
             if obj.TypeId == "Sketcher::SketchObject":
@@ -293,9 +293,9 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
                     # to be implemented?
                     FreeCAD.Console.PrintMessage("Unsupported object type for '" + obj.Label + "', skipping\n")
                     continue
-                
+
             # sort the edges. If the selected path is disconnected, the path will be broken!
-            edges = Part.__sortEdges__(edges_raw)           
+            edges = Part.__sortEdges__(edges_raw)
             # scan edges and derive nodes
             nodes = []
             for edge in edges:
@@ -340,11 +340,11 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
                     FreeCAD.Console.PrintMessage("Unknown edge: " + str(type(edge.Curve)) + " in '" + obj.Label + "',, skipping\n")
             # now add the very last vertex
             nodes.append(lastvertex)
-            
+
             if len(nodes) < 2:
                 FreeCAD.Console.PrintMessage("Less than two nodes found in '" + obj.Label + "', skipping\n")
                 continue
-            
+
             # start actual object output in FastHenry format
             fid.write("* " + obj.Label + "\n")
             if custDot != "":
@@ -360,14 +360,14 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
                     ext = "E"
                 else:
                     ext = str(i)
-                
+
                 if FHbug == True:
                     fid.write("N" + baseName + ext + " x=" + str(node.x) + " y=" + str(int(node.y)) + " z=" + str(node.z) + "\n")
                     gndplane_nodes.append( (baseName+ext, str(node.x), str(int(node.y)), str(node.z)) )
                 else:
                     fid.write("N" + baseName + ext + " x=" + str(node.x) + " y=" + str(node.y) + " z=" + str(node.z) + "\n")
                     gndplane_nodes.append( (baseName+ext, str(node.x), str(int(node.y)), str(node.z)) )
-            
+
             # and finally segments
             for i in range(0, len(nodes)-1):
                 # extension in the node name must be "S" for the Start node
@@ -383,7 +383,7 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
                     ext2 = "E"
                 else:
                     ext2 = str(i+1)
-               
+
                 fid.write("E" + baseName + "N" + ext1 + "N" + ext2 + " ")
                 fid.write("N" + baseName + ext1 + " " + "N" + baseName + ext2)
                 if w > 0:
@@ -399,7 +399,7 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
             # blank lines before next object
             fid.write("\n\n")
 
-        # create GND plane nodes 
+        # create GND plane nodes
         for gndplane_node in gndplane_nodes:
             fid.write("+ Nplane" + gndplane_node[0] + " (" + gndplane_node[1] + "," +
                     gndplane_node[2] + "," + "-1.5" + ")\n" )
@@ -407,50 +407,50 @@ def export_segs2(filename="", disc=3, custDot="", FHbug=False, breakSeg=False, w
         # blank lines before next object
         fid.write("\n\n")
 
-        # create .equiv plane nodes statements 
+        # create .equiv plane nodes statements
         for gndplane_node in gndplane_nodes:
             fid.write(".equiv Nplane" + gndplane_node[0] + " N" + gndplane_node[0] + "\n")
 
     fid.closed
-    
+
 
 def create_FH_plane(filename="", seg1=10, seg2=10, wx=10, wy=10, name="", custDot="", thick=1.0, folder=DEF_FOLDER):
     '''Create a conductive plane using primitive FastHenry segments
-    
+
     'filename' is the name of the export file
     'seg1' is the number of segments along x
     'seg2' is the number of segments along y
     'wx', 'wy' are the plane dimensions along x and y
     'name' is the node extension name (e.g. Nname_1_2)
     'folder' is the folder in which 'filename' will be saved
-    
+
     Example:
     create_FH_plane("plane.inp", seg1=5, seg2=3, folder="C:/temp")
 '''
-        
+
     if filename == "":
         filename = sel[0].Label.replace(" ","_") + ".txt"
 
     if not os.path.isdir(folder):
         os.mkdir(folder)
-   
+
     with open(folder + os.sep + filename, 'w') as fid:
 
         fid.write("* Conductive plane built using primitive FastHenry segments\n")
         fid.write("* created using FreeCAD's ElectroMagnetic Workbench\n")
         fid.write("* see http://www.freecad.org and http://www.fastfieldsolvers.com\n")
         fid.write("\n")
-        
+
         stepx = wx / seg1
         stepy = wy / seg2
-        
+
         # lay down nodes
-        
+
         for i in range(0, seg1+1):
             for j in range(0, seg2+1):
                 fid.write("N" + name + "_" + str(i) + "_" + str(j) + " x=" + str(i*stepx) + " y=" + str(j*stepy) + " z=0 \n")
-            
-        # lay down segments 
+
+        # lay down segments
         #
         # along y
         for i in range(0, seg1+1):
@@ -460,11 +460,11 @@ def create_FH_plane(filename="", seg1=10, seg2=10, wx=10, wy=10, name="", custDo
         for j in range(0, seg2+1):
             for i in range(0, seg1):
                 fid.write("E2"+ name + "_" + str(i) + "_" + str(j) + " N" + name + "_" + str(i) + "_" + str(j) + " N" + name + "_" + str(i+1) + "_" + str(j) + " w=" + str(stepy) + " h=" + str(thick) + " \n")
-                       
+
         fid.write("\n")
-        
+
     fid.closed
-        
+
 def meshSolidWithSegments(obj=None,delta=1.0,deltaX=0.0,deltaY=0.0,deltaZ=0.0,stayInside=False,generateSegs=True):
     ''' Mesh a solid object with a grid of segments
 '''
@@ -484,7 +484,7 @@ def meshSolidWithSegments(obj=None,delta=1.0,deltaX=0.0,deltaY=0.0,deltaZ=0.0,st
         deltaY = float(delta)
     # if the user specified no deltaZ
     if deltaZ <= 0.0:
-        deltaZ = float(delta)   
+        deltaZ = float(delta)
     bbox = obj.Shape.BoundBox
     stepsX = int(bbox.XLength/deltaX)
     deltaSideX = (bbox.XLength - deltaX * stepsX) / 2.0
@@ -525,7 +525,7 @@ def meshSolidWithSegments(obj=None,delta=1.0,deltaX=0.0,deltaY=0.0,deltaZ=0.0,st
                         nodes[step_x,step_y,step_z] = node
                     pos_z = pos_z + deltaZ
                 pos_y = pos_y + deltaY
-            pos_x = pos_x + deltaX  
+            pos_x = pos_x + deltaX
     # if we must stay within the object shape boundaries (within the accuracy
     # of the point sampling)
     else:
@@ -549,7 +549,7 @@ def meshSolidWithSegments(obj=None,delta=1.0,deltaX=0.0,deltaY=0.0,deltaZ=0.0,st
                             nodes[step_x,step_y,step_z] = node
                     pos_z = pos_z + deltaZ
                 pos_y = pos_y + deltaY
-            pos_x = pos_x + deltaX  
+            pos_x = pos_x + deltaX
     # now create the grid of segments
     # first along x
     for step_z in range(0,stepsZ+1):
@@ -609,9 +609,9 @@ def meshSolidWithVoxels(obj=None,delta=1.0):
 
 def getContainingBBox(objs):
     ''' Get the bounding box containing all the listed objects
-    
+
         'objs' is the list of FreeCAD objects
-        
+
         Returns the global bounding box.
         If the list is None, or is not a list, or if the object have no Shape,
         the returned BoundBox is None
@@ -633,10 +633,10 @@ def getContainingBBox(objs):
 
 def createVoxelSpace(bbox,delta):
     ''' Creates the voxel tensor (3D array) in the given bounding box
-    
+
         'bbox' is the overall FreeCAD.BoundBox bounding box
         'delta' is the voxels size length
-        
+
         Returns a voxel tensor as a Numpy 3D array.
         If gbbox is None, returns None
 '''
@@ -656,14 +656,14 @@ def createVoxelSpace(bbox,delta):
 
 def voxelizeConductor(obj,condIndex,gbbox,delta,voxelSpace):
     ''' Voxelize a solid object. The function will modify the 'voxelSpace'
-        by marking with 'condIndex' all the voxels that sample the object 
+        by marking with 'condIndex' all the voxels that sample the object
         'obj' internal.
 
         'obj' is the object to voxelize
         'condIndex' (integer) is the index of the object. It defines the object conductivity.
         'gbbox' (FreeCAD.BoundBox) is the overall bounding box
         'delta' is the voxels size length
-        'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space 
+        'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space
 '''
     if obj == None:
         return
@@ -699,12 +699,12 @@ def voxelizeConductor(obj,condIndex,gbbox,delta,voxelSpace):
 
 def createVoxelShell(obj,condIndex,gbbox,delta,voxelSpace=None):
     ''' Creates a shell composed by the external faces of a voxelized object.
-    
+
         'obj' is the object whose shell must be created
         'condIndex' (integer) is the index of the object. It defines the object conductivity.
         'gbbox' (FreeCAD.BoundBox) is the overall bounding box
         'delta' is the voxels size length
-        'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space 
+        'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space
 '''
     if voxelSpace == None:
         return
@@ -774,12 +774,12 @@ def createVoxelShell(obj,condIndex,gbbox,delta,voxelSpace=None):
         vbase.x += delta
     # create a shell. Does not need to be solid.
     objShell = Part.makeShell(surfList)
-    return objShell   
+    return objShell
 
 def findContactVoxelSurfaces(face,condIndex,gbbox,delta,voxelSpace=None,createShell=False):
     ''' Find the voxel surface sides corresponding to the given contact surface
         (face) of an object. The object must have already been voxelized.
-        
+
         'face' is the object face
         'condIndex' (integer) is the index of the object to which the face belongs.
                 It defines the object conductivity.
@@ -787,7 +787,7 @@ def findContactVoxelSurfaces(face,condIndex,gbbox,delta,voxelSpace=None,createSh
         'delta' is the voxels size length
         'voxelSpace' (Numpy 3D array) is the voxel tensor of the overall space
         'createShell' (bool) creates a shell out of the contact faces
-        
+
         Returns a list of surfaces in the format [x,y,z,voxside] where
         x, y, z are the voxel position indexes, while voxside is '+x', '-x',
         '+y', '-y', '+z', '-z' according the the impacted surface of the voxel
@@ -819,7 +819,7 @@ def findContactVoxelSurfaces(face,condIndex,gbbox,delta,voxelSpace=None,createSh
     halfdelta = delta/2.0
     # small displacement w.r.t. delta
     epsdelta = delta/100.0
-    # array to find the six neighbour 
+    # array to find the six neighbour
     sides = [(1,0,0), (-1,0,0), (0,1,0), (0,-1,0), (0,0,1), (0,0,-1)]
     # string describing the side
     sideStrs = ['+x', '-x', '+y', '-y', '+z', '-z']
@@ -888,7 +888,7 @@ def findContactVoxelSurfaces(face,condIndex,gbbox,delta,voxelSpace=None,createSh
             # create a shell. Does not need to be solid.
             contactShell = Part.makeShell(surfList)
     return [contactList,contactShell]
-    
+
 #bb = App.BoundBox();
 #
 #objects = App.ActiveDocument.findObjects("Part::Feature")

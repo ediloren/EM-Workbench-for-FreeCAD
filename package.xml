@@ -5,7 +5,7 @@
   <version>2.1.1</version>
   <date>2024-04-11</date>
   <maintainer email="enrico dot di_lorenzo at fastfieldsolvers dot com">Enrico Di Lorenzo</maintainer>
-  <license file="LICENSE">LGPLv2.1</license>
+  <license file="LICENSE">LGPL-2.1-or-later</license>
   <url type="repository" branch="master">https://github.com/ediloren/EM-Workbench-for-FreeCAD</url>
   <url type="website">https://github.com/ediloren/EM-Workbench-for-FreeCAD</url>
   <url type="bugtracker">https://github.com/ediloren/EM-Workbench-for-FreeCAD/issues</url>
