@@ -68,6 +68,8 @@ from EM_VHSolver import *
 from EM_VHConductor import *
 from EM_VHPort import *
 from EM_VHInputFile import *
+# FasterCap/FastCap specific
+from EM_FCSolver import *
 
 # for debugging
 #import EM_Globals
@@ -115,3 +117,6 @@ from EM_VHInputFile import *
 #import EM_VHInputFile
 #reload(EM_VHInputFile)
 #from EM_VHInputFile import *
+#import EM_FCSolver
+#reload(EM_FCSolver)
+#from EM_FCSolver import *
