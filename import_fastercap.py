@@ -55,341 +55,428 @@ m_bUseMesh = True
 m_ulInputPanelNum = 0
 
 
+# report parser diagnostics through the FreeCAD console
+def _fc_message(kind, message):
+    printer = (FreeCAD.Console.PrintError if kind == "Error"
+               else FreeCAD.Console.PrintWarning)
+    printer("%s: %s\n" % (kind, message))
+
+
+def _fc_complex(value):
+    """Parse FastCap's compact ``a-jb`` complex-number notation."""
+    value = value.strip().lower().replace("i", "j")
+    if "j" not in value:
+        return complex(float(value))
+    value = value.replace("+j", "+").replace("-j", "-") + "j"
+    return complex(value)
+
+
+# convert an optional FastCap hexadecimal RGB value to a FreeCAD color tuple
+def _fc_color(value):
+    if not value.lower().startswith("0x"):
+        return None
+    hex_color = value[2:]
+    if len(hex_color) not in (6, 8):
+        raise ValueError("color '%s' must be 0xRRGGBB or 0xRRGGBBAA" % value)
+    # FasterCap sample files and FreeCAD Python color tuples both use RGBA,
+    # where alpha 0.0 is transparent and alpha 1.0 is opaque.
+    alpha = int(hex_color[6:8], 16) / 255.0 if len(hex_color) == 8 else 1.0
+    return (int(hex_color[0:2], 16) / 255.0,
+            int(hex_color[2:4], 16) / 255.0,
+            int(hex_color[4:6], 16) / 255.0, alpha)
+
+
+def _fc_record(fields):
+    """Normalize the long and abbreviated embedded-file keywords."""
+    if not fields:
+        return ""
+    record = fields[0].upper()
+    if record in ("F", "FILE"):
+        return "F"
+    if record in ("E", "END"):
+        return "E"
+    return record
+
+
+# build the equivalent of FasterCap CreateFileMap() for combined input files
+def _fc_embedded_files(lines):
+    """Index the ``File name``/``End`` subfiles in a combined input file."""
+    files = {}
+    current = None
+    for line_number, line in lines:
+        fields = line.split()
+        record = _fc_record(fields)
+        if record == "F":
+            if len(fields) < 2:
+                raise ValueError("line %d: File record has no name" % line_number)
+            current = fields[1]
+            files[current] = []
+        elif record == "E":
+            current = None
+        elif current is not None:
+            files[current].append((line_number, line))
+    return files
+
+
+# read text together with original line numbers for contextual parse errors
+def _fc_read_lines(path):
+    with open(path, "r", encoding="utf-8-sig", errors="replace") as stream:
+        return list(enumerate(stream, 1))
+
+
+# append a panel or segment to its electrical conductor / dielectric group
+def _fc_add_geometry(groups, name, kind, geometry):
+    group = groups.setdefault(name, {"kind": kind, "panels": [], "segments": []})
+    group["panels" if len(geometry) == 3 else "segments"].append(geometry)
+
+
+# convert panel densities to face colors using one min/max range for the full
+# hierarchy of external and embedded input files
+def _fc_density_coloring(groups):
+    """Return face colors and the global density range.
+
+    The density range covers the complete input hierarchy rather than an
+    individual include file or conductor.
+    """
+    densities = [density
+                 for group in groups.values()
+                 for _vertices, _color, density in group["panels"]
+                 if density is not None]
+    if not densities:
+        return None, None, None
+
+    density_min = min(densities)
+    density_max = max(densities)
+    # colormap() belongs to the legacy importer and returns RGBT tuples with
+    # a zero fourth component. Convert its RGB output to opaque RGBA tuples
+    # before assigning it to FreeCAD's current DiffuseColor property.
+    legacy_gradient = colormap([(0.0, 1.0, 1.0), (0.0, 0.0, 1.0),
+                                (0.0, 0.0, 0.0), (1.0, 0.0, 0.0),
+                                (1.0, 1.0, 0.0)])
+    gradient = [(red, green, blue, 1.0)
+                for red, green, blue, _transparency in legacy_gradient]
+    if density_max == density_min:
+        # A constant field has no low/high end. Use the map center instead of
+        # dividing by zero or suggesting a false extremum.
+        def density_index(_density):
+            return (COLORMAP_LEN - 1) // 2
+    else:
+        scale = (COLORMAP_LEN - 1) / float(density_max - density_min)
+
+        def density_index(density):
+            return max(0, min(COLORMAP_LEN - 1,
+                              int((density - density_min) * scale)))
+
+    colors = []
+    default_color = (0.8, 0.8, 0.8, 1.0)
+    for group in groups.values():
+        for _vertices, explicit_color, density in group["panels"]:
+            if density is not None:
+                colors.append(gradient[density_index(density)])
+            elif explicit_color is not None:
+                colors.append(explicit_color)
+            else:
+                colors.append(default_color)
+    return colors, density_min, density_max
+
+
+# create either one Mesh per electrical element or a nested Part compound;
+# the outer compound contains one child compound per conductor or dielectric
+def _fc_build_result(groups, use_part_type, is_2d):
+    """Build one child shape per electrical conductor or dielectric."""
+    if use_part_type == "mesh" and not is_2d:
+        meshes = []
+        for name, group in groups.items():
+            triangles = []
+            for vertices, _color, _density in group["panels"]:
+                if len(vertices) == 3:
+                    triangles.extend(vertices)
+                else:
+                    triangles.extend((vertices[0], vertices[1], vertices[2],
+                                      vertices[0], vertices[2], vertices[3]))
+            mesh = Mesh.Mesh(triangles)
+            Mesh.show(mesh)
+            meshes.append(mesh)
+        return meshes
+
+    group_shapes = []
+    group_names = []
+    group_types = []
+    explicit_face_colors = []
+    for name, group in groups.items():
+        shapes = []
+        panel_colors = []
+        for vertices, color, _density in group["panels"]:
+            wire = Part.makePolygon(vertices + [vertices[0]])
+            shapes.append(Part.Face(wire))
+            panel_colors.append(color)
+        for start, end, _color, _density in group["segments"]:
+            shapes.append(Part.makeLine(start, end))
+        if not shapes:
+            continue
+        group_shapes.append(Part.makeCompound(shapes))
+        group_names.append(name)
+        group_types.append(group["kind"])
+        explicit_face_colors.extend(panel_colors)
+
+    outer_compound = Part.makeCompound(group_shapes)
+    document = FreeCAD.ActiveDocument
+    if document is None:
+        document = FreeCAD.newDocument()
+    feature = document.addObject("Part::Feature", "FasterCap_Compound")
+    feature.Label = "FasterCap / FastCap geometry"
+    feature.Shape = outer_compound
+    feature.addProperty("App::PropertyStringList", "ElementNames", "FasterCap")
+    feature.addProperty("App::PropertyStringList", "ElementTypes", "FasterCap")
+    feature.ElementNames = group_names
+    feature.ElementTypes = group_types
+
+    density_colors, density_min, density_max = _fc_density_coloring(groups)
+    if density_colors is not None:
+        feature.addProperty("App::PropertyFloat", "DensityMinimum", "FasterCap")
+        feature.addProperty("App::PropertyFloat", "DensityMaximum", "FasterCap")
+        feature.DensityMinimum = density_min
+        feature.DensityMaximum = density_max
+        feature.ViewObject.DiffuseColor = density_colors
+    elif (explicit_face_colors and
+          all(color is not None for color in explicit_face_colors)):
+        feature.ViewObject.DiffuseColor = explicit_face_colors
+    document.recompute()
+    return feature
+
 def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
-    '''Import file in FasterCap format as Mesh or Part.compound
-        
-    'filename' is the name of the export file
-    'folder' is the folder where the file resides
-        
+    '''Import a FasterCap/FastCap 2D or 3D input hierarchy.
+
+    'filename' is the name of the FasterCap/FastCap input file
+    'folder' is the folder where the input file resides
+    'usePartType' selects a Part compound (default) or a set of Meshes
+
+    The Part result is an outer compound containing one nested compound for
+    every distinct conductor and dielectric interface. Panel charge densities,
+    when present, are converted into face colors over the global density range.
+
+    The function returns the new FreeCAD Part::Feature, a list of Meshes when
+    usePartType is 'mesh', or False if the input cannot be parsed.
+
     Example:
-    fastercapObj = read_fastcap_file('cube.txt')
-'''
-
-    # 
-    # this function is a Python-converted version of the FasterCap C++ 
-    # ReadFastCapFile() import function (and associated functions)
+    fastercapObj = read_fastcap_file('array_of_5_spheres.lst',
+                                      'FasterCap/Samples/3D')
+    '''
     #
+    # this function is a Python implementation of CAutoRefine::ReadFastCapFile(),
+    # CreateFileMap(), Parse3DInputFile(), and Parse2DInputFile() from FasterCap.
+    # It indexes embedded files, recursively follows C and D references, collects
+    # T, Q, or S geometry by electrical element, and finally creates the selected
+    # FreeCAD representation.
+    #
+    global m_lDielNum, m_lCondNum, m_iParseLevel, m_iGroupNum
+    global m_lGroupDielNum, m_sUsePartType, m_ulInputPanelNum
 
-    global m_lDielNum
-    global m_lCondNum
-    global m_iParseLevel
-    global m_iGroupNum
-    global m_lGroupDielNum
-    global m_sUsePartType
-    global m_ulInputPanelNum
+    # validate the requested FreeCAD representation before reading any files
+    if usePartType not in ('compound', 'mesh'):
+        _fc_message("Error", "usePartType must be 'compound' or 'mesh'")
+        return False
 
-    # init global vars
+    # resolve the input path before recursion; relative include names are resolved
+    # from the directory of the file containing the reference
+    root = os.path.abspath(os.path.join(folder, filename))
+    if not os.path.isfile(root) or not os.access(root, os.R_OK):
+        _fc_message("Error", "file '%s' is not readable" % root)
+        return False
+
+    # initialize the parser state for a new, independent import operation
     m_lDielNum = 0
     m_lCondNum = 0
     m_iParseLevel = -1
-    m_iGroupNum =  [1 for x in range(0,AUTOREFINE_MAX_PARSE_LEVEL)]
+    m_iGroupNum = [1] * AUTOREFINE_MAX_PARSE_LEVEL
     m_lGroupDielNum = 0
     m_sUsePartType = usePartType
-    # init number of input panels
     m_ulInputPanelNum = 0
 
-      
-    if not os.path.isdir(folder):
-        FreeCAD.Console.PrintMessage("Error: '" + folder + "' is not a valid folder\n")
-        return False
-        
-    if not os.path.exists(folder + os.sep + filename):
-        FreeCAD.Console.PrintMessage("Error: '" + filename + "' is not a valid file in the directory " + folder + "\n")
-        return False
-        
-    # understand the type of input file (2D or 3D)
-    fileinname =fol
-    der + os.sep + filename
-    line = ''
+    # read the top-level file once and index any File / End definitions so the
+    # same embedded geometry can be referenced multiple times with new offsets
     try:
-        with open(fileinname, 'r') as fid:
-            line = fid.readline()
-            fid.closed
-    except OSError as err:
-        FreeCAD.Console.PrintMessage("OS error: " + format(err) + "\n")
+        root_lines = _fc_read_lines(root)
+        embedded = _fc_embedded_files(root_lines)
+    except (OSError, ValueError) as error:
+        _fc_message("Error", "cannot read '%s': %s" % (root, error))
         return False
 
-    # clear filePosMap dictionary
-    filePosMap = {}
-    if '2d' in line or '2D' in line:
-        # passing dummy 'fid' and 'filePosMap' (that must be empty) since
-        # there is no parent file
-        ret = parse_2D_input_file(fileinname, fid, filePosMap);
-    else:
-        # passing dummy 'fid' and 'filePosMap' (that must be empty) since
-        # there is no parent file
-        ret = parse_3D_input_file(fileinname, fid, filePosMap);
-    
-    return ret
-    
-def parse_2D_input_file(fileinname, fid, filePosMap, use_mesh):
-    
-    FreeCAD.Console.PrintMessage("Parse 2D\n")
-    return True
-    
-    
-def parse_3D_input_file(fileinname, parentFid, parentFilePosMap, isdiel = False, offset = Vector(0.0, 0.0, 0.0), 
-                        outperm = complex(1.0), groupname = '', inperm = complex(1.0), dielrefpoint = Vector(0.0, 0.0, 0.0)):
-    
-    global m_iParseLevel
-    global m_iGroupNum 
-    global m_lGroupDielNum
-    global m_sUsePartType
-    global m_ulInputPanelNum
-    
-    # increment the recursion level counter
-    m_iParseLevel = m_iParseLevel + 1
-    
-    if m_iParseLevel >= AUTOREFINE_MAX_PARSE_LEVEL:
-        FreeCAD.Console.PrintMessage("Warning: maximum number (" + format(AUTOREFINE_MAX_PARSE_LEVEL) + 
-                                     ") of recursive files exceeded, skipping file " + fileinname + "\n")
-        return True
-        
-    # reset group number for current parse level
-    m_iGroupNum[m_iParseLevel] = 1;
-    
-    # init filePosMap
-    filePosMap = {}
-    
-    # check if the conductor file is a sub-file
-    if fileinname in parentFilePosMap:
-        # if it is a sub-file, copy parent data
-        filePosMap = parentFilePosMap
-        fid = parentFid
+    # FasterCap identifies a 2D problem by looking for 2D in the first line
+    first_line = root_lines[0][1] if root_lines else ""
+    is_2d = "2d" in first_line.lower()
+    # preserve insertion order so compound children and face colors follow the
+    # order in which conductors, dielectrics, and panels occur in the input
+    groups = {}
+    active_sources = []
+
+    # parse() mirrors Parse2DInputFile() and Parse3DInputFile(). source_lines is
+    # set only for a definition embedded between File and End statements; offset
+    # is accumulated across references, group_prefix identifies the target
+    # conductor or dielectric compound, and element_color carries the optional
+    # color assigned on the enclosing C or D statement.
+    def parse(source_name, source_lines=None, offset=Vector(0.0, 0.0, 0.0),
+              is_dielectric=False, group_prefix="", element_color=None,
+              depth=0):
+        global m_lDielNum, m_lCondNum, m_iParseLevel, m_lGroupDielNum
+        global m_ulInputPanelNum
+        # enforce the same maximum nesting depth used by FasterCap
+        if depth >= AUTOREFINE_MAX_PARSE_LEVEL:
+            raise ValueError("maximum include depth (%d) exceeded at '%s'" %
+                             (AUTOREFINE_MAX_PARSE_LEVEL, source_name))
+
+        # keep a stack of active sources to detect circular file references
+        source_path = os.path.abspath(source_name)
+        identity = (source_path if source_lines is None
+                    else "%s#embedded:%s" % (root, source_name))
+        if identity in active_sources:
+            raise ValueError("recursive include cycle involving '%s'" % source_name)
+        active_sources.append(identity)
+        m_iParseLevel = depth
         try:
-            # store current file position to restore it at the end
-            # Remark: tell() in Python under Windows must be used with files opened as 'rb'
-            # as Unix-style endings may cause tell() to return illegal values
-            startPos = fid.tell()
-            # and get linenum and position
-            linenum = parentFilePosMap[fileinname].linenum
-            fid.seek(parentFilePosMap[fileinname].filePos)
-        except IOError as err:
-            FreeCAD.Console.PrintMessage("OS error: " + format(err) + "\n")
-            fid.closed
-            return False
-    else:
-        try:
-            # open the sub file id
-            fid = open(fileinname, 'rb')
-            linenum = 1
-            fid.closed
-        except OSError as err:
-            FreeCAD.Console.PrintMessage("OS error: " + format(err) + "\n")
-            return False
-        
-        # build the file map (for single input file)
-        ret = create_file_map(fileinname, fid, filePosMap)
-        if ret != True:
-            return ret
-            
-    panelVertexes = []
-    chargeDensity = []
-    panelColors = []
-        
-    for line in fid:
-        # if subfile definitions (starting or ending), stop here
-        if line[0] in ('E', 'e', 'F', 'f'):
-            break
-        # now check for actual statements
-        #
-        # first split the line into the components
-        splitLine = line.split()
-        # if the line was actually composed only by separators, continue
-        if len(splitLine) == 0:
-            continue
-        # if conductor file
-        if splitLine[0] == 'C':
-            try:
-                # read file name
-                name = splitline[1]
-                
-                # read outer permittivity
-                
-                if 'j' in splitline[2]:
-                    # as the complex format in FasterCap is 'a-jb' and not 'a-bj' as the Python 'complex' class
-                    # would like, this trick modifies the string to be parsable by 'complex'
-                    # Remark: we assume that the complex number has no spaces; FasterCap would accept
-                    # also syntax like 'a - jb', here it would cause errors
-                    localOutPerm = complex(splitline[2].replace('j', '') + 'j')
-                else:
-                    localOutPerm = complex(splitline[2])
-                
-                # read offset coordinates
-                localOffset = Vector(float(splitLine[3]), float(splitLine[4]), float(splitLine[5]))
-                localOffset = localOffset + offset
-                
-                # compute group name (to distinguish between panels with the same
-                # conductor name because in the same file called more than once)
-                if m_iParseLevel == 0:
-                    localGroupname = "g"
-                else:
-                    localGroupname = groupname
-                localGroupname = localGroupname + str(m_iGroupNum[m_iParseLevel]) + '_'
-                
-                # read optional values
-                if len(splitLine) >= 7:
-                    # read optional '+'. If not a '+', increment the group
-                    if splitLine[6] != '+':
-                        # increase group name
-                        m_iGroupNum[m_iParseLevel] = m_iGroupNum[m_iParseLevel] + 1
-                    
-                # read optional color; if present, it is the last element of the line
-                if splitLine[-1][0:2] in ("0x", "0X"):
-                    groupcolor = splitLine[5]               
-                
-                # recurse into new conductor file
-                m_iGroupNum[m_iParseLevel+1] = 1
-                
-            except (IndexError, ValueError):
-                FreeCAD.Console.PrintMessage("Error in file " + fileinname + " at line " + format(linenum) + " : " + line + "\n")   
-            
-            ret = Parse3DInputFile(name, fid, filePosMap, False, localOffset, localOutperm, localGroupname)
-            
-            if ret == False:
-                break
-
-        # if dielectric file
-        if splitLine[0] == 'D':
-            try:
-                # read file name
-                name = splitline[1]
-                
-                # read outer permittivity
-                
-                if 'j' in splitline[2]:
-                    # as the complex format in FasterCap is 'a-jb' and not 'a-bj' as the Python 'complex' class
-                    # would like, this trick modifies the string to be parsable by 'complex'
-                    # Remark: we assume that the complex number has no spaces; FasterCap would accept
-                    # also syntax like 'a - jb', here it would cause errors
-                    localOutPerm = complex(splitline[2].replace('j', '') + 'j')
-                else:
-                    localOutPerm = complex(splitline[2])
-                
-                # read inner permittivity
-                
-                if 'j' in splitline[3]:
-                    # as the complex format in FasterCap is 'a-jb' and not 'a-bj' as the Python 'complex' class
-                    # would like, this trick modifies the string to be parsable by 'complex'
-                    # Remark: we assume that the complex number has no spaces; FasterCap would accept
-                    # also syntax like 'a - jb', here it would cause errors
-                    localOutPerm = complex(splitline[3].replace('j', '') + 'j')
-                else:
-                    localOutPerm = complex(splitline[3])
- 
-                 # read offset coordinates
-                localOffset = Vector(float(splitLine[4]), float(splitLine[5]), float(splitLine[6]))
-                localOffset = localOffset + offset
-                
-                 # read dielectric reference point coordinates
-                localDielrefpoint = Vector(float(splitLine[7]), float(splitLine[8]), float(splitLine[9]))
-                localDielrefpoint = localDielrefpoint + offset
-
-                # read optional values
-                if len(splitLine) >= 11:
-                    # read optional '-'
-                    # if '-', reverse outperm and inperm;
-                    # in this way, the reference point is always on the outperm side
-                    if splitLine[10] == '-':
-                        localInperm, localOutperm = localOutperm, localInperm
-                    
-                # read optional color; if present, it is the last element of the line
-                if splitLine[-1][0:2] in ("0x", "0X"):
-                    groupcolor = splitLine[5]               
-                
-                # compute dielectric name (to distinguish between panels
-                # in the same file called more than once)
-                localGroupname = "diel" + str(m_lGroupDielNum)
-                sprintf(localGroupname, "diel%ld", m_lGroupDielNum)
-                # increase group name
-                m_lGroupDielNum = m_lGroupDielNum + 1
-
-            except (IndexError, ValueError):
-                FreeCAD.Console.PrintMessage("Error in file " + fileinname + " at line " + format(linenum) + " : " + line + "\n")   
-
-            # recurse into new dielectric file
-            ret = Parse3DInputFile(name, fid, filePosMap, True, localOffset, localOutperm, localGroupname, localInperm, localDielrefpoint)
-            
-            if ret == False:
-                break
-
-        # if triangle
-        if splitLine[0] == 'T':
-            try:
-                # read conductor name to which the patch belongs
-                tmpname = splitline[1]
-                
-                # read panel coordinates
-                #
-                
-                # if using mesh, we need a flat list of vertexes, that will be used in triplets
-                # to build the triangular-only mesh faces
-                if m_sUsePartType == 'mesh':
-                    panelVertexes.extend( [ [float(splitLine[2]), float(splitLine[3]), float(splitLine[4])],
-                                            [float(splitLine[5]), float(splitLine[6]), float(splitLine[7])],
-                                            [float(splitLine[8]), float(splitLine[9]), float(splitLine[10])] ])
-                # if using faces, we need FreeCAD.Vector or tuple of three floats for each vertex, in a vector
-                # with as many elements as the vertexes of the polygon supporting the face
-                else:
-                    panelVertexes.append( [ (float(splitLine[2]), float(splitLine[3]), float(splitLine[4])),
-                                            (float(splitLine[5]), float(splitLine[6]), float(splitLine[7])),
-                                            (float(splitLine[8]), float(splitLine[9]), float(splitLine[10])) ])
-                                            
-                # read optional reference point
-                if len(splitLine) >= 14:
-                    localDielrefpoint = Vector(float(splitLine[11]), float(splitLine[12]), float(splitLine[13]))
-                    localDielrefpoint = localDielrefpoint + offset
-                    uselocaldiel = True
-                else
-                    uselocaldiel = False
-
-                # read optional trailing charge density information, or color
-                # Note that charge density is alternative to color (cannot have both), but charge density could 
-                # be confused with the last coordinate of the optional reference point. So if there are three
-                # additional optional float values, this is the reference point, and if there is something else still,
-                # this must be charge density or color; if there are not three additional optional float values, 
-                # but there is something else, again this must be charge density or color, so look at the last value
-                # on the line
-                if (uselocaldiel == True and len(splitLine) >= 15) or (uselocaldiel == false and len(splitline) >= 12):
-                    # if color, read it
-                    if splitLine[-1][0:2] in ("0x", "0X"):
-                        panelColors.append(splitLine[-1])
-                    else
-                        chargeDensity.append(float(splitLine[11]))
-
-            except (IndexError, ValueError):
-                FreeCAD.Console.PrintMessage("Error on line " + format(i) + " : " + line + "\n")
-                
-            name = groupname
-            # if this is a conductor panel, compose the actual name; otherwise, for dielectric interfaces,
-            # we can ignore specific conductor names
-            if isdiel == False:
-                # concat name with group name
-                name = name + tmpname
-            
-            ret = GetConductor(&(itc), &dielIndex, name, isdiel, outpermRe, outpermIm, inpermRe, inpermIm, dielrefpoint)
-            if(ret == False)
-                break
-            # ret = (long)CreatePanel(vertex, tmpname, dielIndex, &itc, fileinname, linenum, AUTOREFINE_SIMPLE_CREATE_PANEL, globalVars, uselocaldiel, localDielrefpoint);
-           
-            
-
-            # counting panels (i.e. the panel # in the input file, no input refinement,
-            # e.g. Q panels split in two triangles)
-            if isdiel == False:
-                m_ulInputPanelNum = m_ulInputPanelNum + 1
+            # an external definition is opened from disk; an embedded definition
+            # instead reuses the lines indexed from the top-level combined file
+            if source_lines is None:
+                lines = _fc_read_lines(source_path)
+                base_folder = os.path.dirname(source_path)
+                local_embedded = _fc_embedded_files(lines)
             else:
-                m_ulInputPanelNum = m_ulInputPanelNum + 1
-                                            
+                lines = source_lines
+                base_folder = os.path.dirname(root)
+                local_embedded = embedded
 
+            # conductor group numbering is local to every parsing level
+            group_number = 1
+            in_embedded = False
+            # scan only the current file section; embedded sections are parsed later
+            # when referenced by a conductor or dielectric statement
+            for line_number, raw_line in lines:
+                fields = raw_line.split()
+                if not fields or fields[0].startswith(("*", "#", ";")):
+                    continue
+                record = _fc_record(fields)
+                if record == "F":
+                    in_embedded = True
+                    continue
+                if record == "E":
+                    in_embedded = False
+                    continue
+                if in_embedded or record == "N":
+                    continue
 
+                try:
+                    # if a conductor or dielectric reference, validate its material data,
+                    # accumulate its offset, and recursively parse its geometry file
+                    if record in ('C', 'D'):
+                        minimum = ((5 if is_2d else 6) if record == 'C'
+                                   else (8 if is_2d else 10))
+                        if len(fields) < minimum:
+                            raise ValueError("too few fields for %s record" % record)
+                        child_name = fields[1]
+                        _fc_complex(fields[2])
+                        coordinate = 3
+                        if record == 'D':
+                            _fc_complex(fields[3])
+                            coordinate = 4
+                        dimensions = 2 if is_2d else 3
+                        values = [float(value) for value in
+                                  fields[coordinate:coordinate + dimensions]]
+                        if dimensions == 2:
+                            values.append(0.0)
+                        child_offset = offset + Vector(*values)
+                        # C and D records may assign one color to the complete
+                        # referenced element, after their other optional values.
+                        child_color = next((_fc_color(value) for value in fields
+                                            if value.lower().startswith("0x")),
+                                           None)
+                        # reproduce the FasterCap conductor grouping convention; a trailing
+                        # plus sign joins this reference to the following conductor group
 
-                            
-    return True
-    
-def create_file_map(fileinname, fid, filePosMap)
-    return False
-    
+                        if record == 'C':
+                            prefix_base = "g" if depth == 0 else group_prefix
+                            child_group = "%s%d_" % (prefix_base, group_number)
+                            optional_index = coordinate + dimensions
+                            joined_to_next = (len(fields) > optional_index and
+                                              fields[optional_index] == '+')
+                            if not joined_to_next:
+                                group_number += 1
+                            m_lCondNum += 1
+                        else:
+                            child_group = "diel%d" % m_lGroupDielNum
+                            m_lGroupDielNum += 1
+                            m_lDielNum += 1
+
+                        # embedded definitions take precedence over external files
+                        child_lines = local_embedded.get(child_name)
+                        if child_lines is not None:
+                            parse(child_name, child_lines, child_offset,
+                                  record == 'D', child_group, child_color,
+                                  depth + 1)
+                        else:
+                            child_path = (child_name if os.path.isabs(child_name)
+                                          else os.path.join(base_folder, child_name))
+                            parse(child_path, None, child_offset,
+                                  record == 'D', child_group, child_color,
+                                  depth + 1)
+
+                    # if a 3D triangular or quadrilateral panel, read all vertexes
+                    elif record in ('T', 'Q') and not is_2d:
+                        count = 3 if record == 'T' else 4
+                        needed = 2 + count * 3
+                        if len(fields) < needed:
+                            raise ValueError("too few coordinates for %s panel" % record)
+                        numbers = [float(value) for value in fields[2:needed]]
+                        vertices = [offset + Vector(*numbers[index:index + 3])
+                                    for index in range(0, len(numbers), 3)]
+                        optional = fields[needed:]
+                        trailing = optional[3:] if len(optional) >= 3 else optional
+                        panel_color = _fc_color(trailing[-1]) if trailing else None
+                        # a panel-specific color overrides the color inherited
+                        # from its enclosing C or D element
+                        color = panel_color if panel_color is not None else element_color
+                        density = (None if not trailing or panel_color is not None
+                                   else float(trailing[-1]))
+                        name = group_prefix if is_dielectric else group_prefix + fields[1]
+                        _fc_add_geometry(groups, name, "Dielectric" if is_dielectric
+                                         else "Conductor", (vertices, color, density))
+                        m_ulInputPanelNum += 1
+
+                    # if a 2D segment, read its two endpoints and optional data
+                    elif record == 'S' and is_2d:
+                        if len(fields) < 6:
+                            raise ValueError("too few coordinates for S segment")
+                        start = offset + Vector(float(fields[2]), float(fields[3]), 0.0)
+                        end = offset + Vector(float(fields[4]), float(fields[5]), 0.0)
+                        optional = fields[6:]
+                        trailing = optional[2:] if len(optional) >= 2 else optional
+                        panel_color = _fc_color(trailing[-1]) if trailing else None
+                        # a panel-specific color overrides the color inherited
+                        # from its enclosing C or D element
+                        color = panel_color if panel_color is not None else element_color
+                        density = (None if not trailing or panel_color is not None
+                                   else float(trailing[-1]))
+                        name = group_prefix if is_dielectric else group_prefix + fields[1]
+                        _fc_add_geometry(groups, name, "Dielectric" if is_dielectric
+                                         else "Conductor", (start, end, color, density))
+                        m_ulInputPanelNum += 1
+                except (IndexError, TypeError, ValueError) as error:
+                    raise ValueError("%s:%d: %s" %
+                                     (source_name, line_number, error))
+        # restore the recursion stack and current parsing level also on errors
+        finally:
+            active_sources.pop()
+            m_iParseLevel = depth - 1
+
+    try:
+        # start parsing from the top-level FasterCap / FastCap file
+        parse(root)
+        if not groups:
+            raise ValueError("no panel or segment records were found")
+        return _fc_build_result(groups, usePartType, is_2d)
+    except (OSError, ValueError) as error:
+        _fc_message("Error", str(error))
+        return False
+
 def import_fastercap(filename, folder=DEF_FOLDER, use_mesh=True):
     '''Import file in FasterCap format as Mesh or Part.compound
         
