@@ -184,64 +184,154 @@ def _fc_density_coloring(groups):
 # the outer compound contains one child compound per conductor or dielectric
 def _fc_build_result(groups, use_part_type, is_2d):
     """Build one child shape per electrical conductor or dielectric."""
-    if use_part_type == "mesh" and not is_2d:
-        meshes = []
-        for name, group in groups.items():
-            triangles = []
-            for vertices, _color, _density in group["panels"]:
-                if len(vertices) == 3:
-                    triangles.extend(vertices)
-                else:
-                    triangles.extend((vertices[0], vertices[1], vertices[2],
-                                      vertices[0], vertices[2], vertices[3]))
-            mesh = Mesh.Mesh(triangles)
-            Mesh.show(mesh)
-            meshes.append(mesh)
-        return meshes
-
-    group_shapes = []
-    group_names = []
-    group_types = []
-    explicit_face_colors = []
-    for name, group in groups.items():
-        shapes = []
-        panel_colors = []
-        for vertices, color, _density in group["panels"]:
-            wire = Part.makePolygon(vertices + [vertices[0]])
-            shapes.append(Part.Face(wire))
-            panel_colors.append(color)
-        for start, end, _color, _density in group["segments"]:
-            shapes.append(Part.makeLine(start, end))
-        if not shapes:
-            continue
-        group_shapes.append(Part.makeCompound(shapes))
-        group_names.append(name)
-        group_types.append(group["kind"])
-        explicit_face_colors.extend(panel_colors)
-
-    outer_compound = Part.makeCompound(group_shapes)
     document = FreeCAD.ActiveDocument
     if document is None:
         document = FreeCAD.newDocument()
-    feature = document.addObject("Part::Feature", "FasterCap_Compound")
+
+    if use_part_type == "mesh" and not is_2d:
+        # A Part compound can contain only TopoShapes, not Mesh kernel objects.
+        # Use a document group as the mesh equivalent of the outer compound.
+        mesh_group = document.addObject("App::DocumentObjectGroup",
+                                        "FasterCap_Meshes")
+        mesh_group.Label = "FasterCap / FastCap meshes"
+        mesh_group.addProperty("App::PropertyStringList", "ElementNames",
+                               "FasterCap")
+        mesh_group.addProperty("App::PropertyStringList", "ElementTypes",
+                               "FasterCap")
+
+        # Density colors are computed over all files and elements. If there are
+        # no densities, reproduce the Part behavior and apply explicit colors
+        # only when every input panel has one.
+        density_colors, density_min, density_max = _fc_density_coloring(groups)
+        explicit_colors = [color
+                           for group in groups.values()
+                           for _vertices, color, _density in group["panels"]]
+        if density_colors is not None:
+            panel_colors = density_colors
+            mesh_group.addProperty("App::PropertyFloat", "DensityMinimum",
+                                   "FasterCap")
+            mesh_group.addProperty("App::PropertyFloat", "DensityMaximum",
+                                   "FasterCap")
+            mesh_group.DensityMinimum = density_min
+            mesh_group.DensityMaximum = density_max
+        elif (explicit_colors and
+              all(color is not None for color in explicit_colors)):
+            panel_colors = explicit_colors
+        else:
+            panel_colors = None
+
+        element_names = []
+        element_types = []
+        color_index = 0
+        for name, group in groups.items():
+            triangles = []
+            facet_colors = []
+            for vertices, _color, _density in group["panels"]:
+                color = (panel_colors[color_index]
+                         if panel_colors is not None else None)
+                color_index += 1
+                if len(vertices) == 3:
+                    triangles.append([vertices[0], vertices[1], vertices[2]])
+                    if color is not None:
+                        facet_colors.append(color)
+                else:
+                    # Mesh supports triangular facets only. Keep the same
+                    # diagonal used by the old importer and duplicate the
+                    # source quadrilateral's color for both new facets.
+                    triangles.append([vertices[0], vertices[1], vertices[2]])
+                    triangles.append([vertices[0], vertices[2], vertices[3]])
+                    if color is not None:
+                        facet_colors.extend([color, color])
+
+            if not triangles:
+                continue
+            mesh_object = document.addObject("Mesh::Feature", "FasterCap_Mesh")
+            mesh_object.Label = name
+            mesh_object.Mesh = Mesh.Mesh(triangles)
+            mesh_object.addProperty("App::PropertyString", "ElementType",
+                                    "FasterCap")
+            mesh_object.ElementType = group["kind"]
+            if panel_colors is not None:
+                # FreeCAD uses one FaceColors entry per triangular mesh facet.
+                mesh_object.addProperty("App::PropertyColorList", "FaceColors")
+                mesh_object.FaceColors = facet_colors
+                mesh_object.ViewObject.Coloring = True
+            mesh_group.addObject(mesh_object)
+            element_names.append(name)
+            element_types.append(group["kind"])
+
+        mesh_group.ElementNames = element_names
+        mesh_group.ElementTypes = element_types
+        document.recompute()
+        return mesh_group
+
+    # Density colors are calculated globally, but must be distributed over the
+    # separate conductor and dielectric document objects in panel order.
+    density_colors, density_min, density_max = _fc_density_coloring(groups)
+    explicit_colors = [color
+                       for group in groups.values()
+                       for _vertices, color, _density in group["panels"]]
+    if density_colors is not None:
+        face_colors = density_colors
+    elif (explicit_colors and
+          all(color is not None for color in explicit_colors)):
+        face_colors = explicit_colors
+    else:
+        face_colors = None
+
+    group_objects = []
+    group_names = []
+    group_types = []
+    color_index = 0
+    for name, group in groups.items():
+        shapes = []
+        panel_count = len(group["panels"])
+        for vertices, _color, _density in group["panels"]:
+            wire = Part.makePolygon(vertices + [vertices[0]])
+            shapes.append(Part.Face(wire))
+        for start, end, _color, _density in group["segments"]:
+            shapes.append(Part.makeLine(start, end))
+        if not shapes:
+            color_index += panel_count
+            continue
+
+        # Store the raw faces or segments inside a compound Shape on one
+        # document object. FreeCAD therefore exposes the electrical element in
+        # the tree, but not its individual geometric primitives.
+        element = document.addObject("Part::Feature", "FasterCap_Element")
+        element.Label = name
+        element.Shape = Part.makeCompound(shapes)
+        element.addProperty("App::PropertyString", "ElementType", "FasterCap")
+        element.ElementType = group["kind"]
+        if face_colors is not None and panel_count:
+            element.ViewObject.DiffuseColor = \
+                face_colors[color_index:color_index + panel_count]
+        color_index += panel_count
+        group_objects.append(element)
+        group_names.append(name)
+        group_types.append(group["kind"])
+
+    # Part::Compound links the per-element document objects. Its tree node can
+    # be expanded down to the conductor and dielectric compounds, while faces
+    # and segments remain sub-elements rather than tree objects.
+    feature = document.addObject("Part::Compound", "FasterCap_Compound")
     feature.Label = "FasterCap / FastCap geometry"
-    feature.Shape = outer_compound
+    feature.Links = group_objects
     feature.addProperty("App::PropertyStringList", "ElementNames", "FasterCap")
     feature.addProperty("App::PropertyStringList", "ElementTypes", "FasterCap")
     feature.ElementNames = group_names
     feature.ElementTypes = group_types
 
-    density_colors, density_min, density_max = _fc_density_coloring(groups)
     if density_colors is not None:
         feature.addProperty("App::PropertyFloat", "DensityMinimum", "FasterCap")
         feature.addProperty("App::PropertyFloat", "DensityMaximum", "FasterCap")
         feature.DensityMinimum = density_min
         feature.DensityMaximum = density_max
-        feature.ViewObject.DiffuseColor = density_colors
-    elif (explicit_face_colors and
-          all(color is not None for color in explicit_face_colors)):
-        feature.ViewObject.DiffuseColor = explicit_face_colors
     document.recompute()
+    if face_colors is not None:
+        # Also color the generated outer compound because Part::Compound may
+        # hide its linked children while displaying its own recomputed Shape.
+        feature.ViewObject.DiffuseColor = face_colors
     return feature
 
 def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
@@ -249,14 +339,15 @@ def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
 
     'filename' is the name of the FasterCap/FastCap input file
     'folder' is the folder where the input file resides
-    'usePartType' selects a Part compound (default) or a set of Meshes
+    'usePartType' selects a Part 'compound' (default) or grouped Mesh 'mesh' features
 
     The Part result is an outer compound containing one nested compound for
-    every distinct conductor and dielectric interface. Panel charge densities,
-    when present, are converted into face colors over the global density range.
+    every distinct conductor and dielectric interface. The Mesh result is a
+    document group containing one Mesh::Feature for each electrical element.
+    Panel charge densities and explicit colors are applied per face or facet.
 
-    The function returns the new FreeCAD Part::Feature, a list of Meshes when
-    usePartType is 'mesh', or False if the input cannot be parsed.
+    The function returns the new FreeCAD Part::Compound, the mesh document group
+    when usePartType is 'mesh', or False if the input cannot be parsed.
 
     Example:
     fastercapObj = read_fastcap_file('array_of_5_spheres.lst',
