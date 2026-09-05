@@ -70,6 +70,7 @@ from EM_VHPort import *
 from EM_VHInputFile import *
 # FasterCap/FastCap specific
 from EM_FCSolver import *
+from EM_FCImport import *
 
 # for debugging
 #import EM_Globals
