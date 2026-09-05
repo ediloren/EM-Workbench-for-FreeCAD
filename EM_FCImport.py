@@ -60,6 +60,9 @@ else:
 __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join(__dir__, 'Resources')
 
+# defines
+#
+# importer limits and file-selection filter
 FCIMPORT_MAX_PARSE_LEVEL = 32
 FCIMPORT_FILTER = QT_TRANSLATE_NOOP(
     "EM_FCImport",
@@ -186,12 +189,14 @@ def getFCInputFiles(filename):
     return files
 
 
-def openFCTextFiles(filename):
+def openFCTextFiles(filename, model=None):
     '''Open all physical files in a FasterCap / FastCap hierarchy for editing.
 
        'filename' is the root input filename. Every external file referenced
             by a C or D statement is opened in a separate FreeCAD MDI tab or
             window. Combined-file definitions remain in the root file editor.
+       'model' is the imported outer compound associated with the editors;
+            it is used by their Save and reload model context-menu action.
 
        The function returns the list of editor windows that were opened or
        activated. It returns an empty list outside the FreeCAD GUI.
@@ -201,9 +206,10 @@ def openFCTextFiles(filename):
             translate("EM", "FasterCap text files require the FreeCAD GUI.\n"))
         return []
 
+    root = os.path.abspath(os.path.expanduser(filename))
     editors = []
-    for path in getFCInputFiles(filename):
-        editor = _open_fc_text_file(path)
+    for path in getFCInputFiles(root):
+        editor = _open_fc_text_file(path, root, model)
         if editor is not None:
             editors.append(editor)
     return editors
@@ -251,7 +257,7 @@ def importFCInputFile(filename, viewText=False):
     if FreeCAD.GuiUp and viewText:
         # Keep the files available for inspection and correction even when the
         # geometry parser reports an error.
-        openFCTextFiles(path)
+        openFCTextFiles(path, result)
     if not result:
         return False
 
@@ -350,6 +356,9 @@ if FreeCAD.GuiUp:
         def __init__(self, path, parent=None):
             super(_FCTextWindow, self).__init__(parent)
             self.path = os.path.abspath(path)
+            self.rootPath = None
+            self.documentName = ""
+            self.modelObjectNames = []
             self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
             self.setWindowTitle(os.path.basename(self.path) + "[*] - FasterCap")
 
@@ -357,12 +366,33 @@ if FreeCAD.GuiUp:
             layout = QtWidgets.QVBoxLayout(container)
             layout.setContentsMargins(4, 4, 4, 4)
 
+            # expose editor display options without adding them to FreeCAD's
+            # global menus
+            menu_bar = QtWidgets.QMenuBar(container)
+            view_menu = menu_bar.addMenu(translate("EM", "View"))
+            self.wrapAction = view_menu.addAction(
+                translate("EM", "Wrap lines"))
+            self.wrapAction.setCheckable(True)
+            layout.setMenuBar(menu_bar)
+
             path_label = QtWidgets.QLabel(self.path, container)
             path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
             layout.addWidget(path_label)
 
             self.editor = QtWidgets.QPlainTextEdit(container)
-            self.editor.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+            # restore the last line-wrap choice for every new editor window
+            preferences = FreeCAD.ParamGet(
+                "User parameter:BaseApp/Preferences/Mod/EM")
+            wrap_lines = preferences.GetBool("FCImportWrapText", False)
+            wrap_mode = (QtWidgets.QPlainTextEdit.WidgetWidth if wrap_lines
+                         else QtWidgets.QPlainTextEdit.NoWrap)
+            self.editor.setLineWrapMode(wrap_mode)
+            self.wrapAction.setChecked(wrap_lines)
+            self.wrapAction.toggled.connect(self.setLineWrap)
+            self.editor.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+            self.editor.customContextMenuRequested.connect(
+                self.showEditorContextMenu)
+            # use the platform fixed-width font for aligned panel coordinates
             if hasattr(QtGui.QFontDatabase, "systemFont"):
                 fixed_font = QtGui.QFontDatabase.systemFont(
                     QtGui.QFontDatabase.FixedFont)
@@ -373,6 +403,7 @@ if FreeCAD.GuiUp:
             self.editor.setFont(fixed_font)
             layout.addWidget(self.editor)
 
+            # retain an explicit Save button in addition to the standard shortcut
             button_layout = QtWidgets.QHBoxLayout()
             button_layout.addStretch()
             save_button = QtWidgets.QPushButton(
@@ -382,15 +413,112 @@ if FreeCAD.GuiUp:
             layout.addLayout(button_layout)
 
             self.setWidget(container)
+            # attach syntax coloring and propagate document changes to the MDI tab
             self.highlighter = _FCSyntaxHighlighter(self.editor.document())
             self.editor.document().modificationChanged.connect(
                 self.setWindowModified)
 
+            # keep Ctrl+S local to the active input-file editor
             shortcut = _FCQShortcut(QtGui.QKeySequence.Save, self)
             shortcut.activated.connect(self.saveFile)
             self.saveShortcut = shortcut
             self.loadFile()
             self.resize(820, 560)
+
+        def setImportContext(self, root_path, model=None):
+            """Associate this editor with its root file and imported geometry."""
+            self.rootPath = os.path.abspath(os.path.expanduser(root_path))
+            document = getattr(model, "Document", None)
+            if document is None:
+                document = FreeCAD.ActiveDocument
+            self.documentName = document.Name if document is not None else ""
+            self.modelObjectNames = []
+            if model:
+                self.modelObjectNames.append(model.Name)
+                self.modelObjectNames.extend(
+                    child.Name for child in getattr(model, "Links", [])
+                    if getattr(child, "Name", None))
+
+        def reloadModel(self):
+            """Save this input hierarchy and replace its imported geometry."""
+            if not self.rootPath:
+                FreeCAD.Console.PrintWarning(
+                    translate("EM", "This editor is not associated with an imported model.\n"))
+                return False
+
+            # save every physical file belonging to the same root hierarchy
+            related_editors = [
+                editor for editor in list(_fc_text_windows.values())
+                if getattr(editor, "rootPath", None) == self.rootPath]
+            for editor in related_editors:
+                try:
+                    if not editor.saveFile():
+                        return False
+                except RuntimeError:
+                    continue
+
+            documents = FreeCAD.listDocuments()
+            document = documents.get(self.documentName)
+            if document is None:
+                FreeCAD.Console.PrintError(
+                    translate("EM", "Cannot reload FasterCap model: its document is closed.\n"))
+                return False
+
+            # delete and rebuild the complete model as one undoable operation
+            FreeCAD.setActiveDocument(document.Name)
+            document.openTransaction(translate(
+                "EM", "Reload FasterCap / FastCap model"))
+            try:
+                for name in self.modelObjectNames:
+                    if document.getObject(name) is not None:
+                        document.removeObject(name)
+                result = importFCInputFile(self.rootPath, False)
+                if not result:
+                    document.abortTransaction()
+                    document.recompute()
+                    return False
+                document.commitTransaction()
+            except Exception as error:
+                document.abortTransaction()
+                document.recompute()
+                FreeCAD.Console.PrintError(
+                    translate("EM", "FasterCap model reload failed: ") +
+                    str(error) + "\n")
+                return False
+
+            # update every related editor to point at the replacement objects
+            for editor in related_editors:
+                try:
+                    editor.setImportContext(self.rootPath, result)
+                except RuntimeError:
+                    continue
+            FreeCADGui.Selection.clearSelection()
+            FreeCADGui.Selection.addSelection(result)
+            FreeCAD.Console.PrintMessage(
+                translate("EM", "Reloaded FasterCap / FastCap model from ") +
+                self.rootPath + "\n")
+            return True
+
+        def setLineWrap(self, enabled):
+            mode = (QtWidgets.QPlainTextEdit.WidgetWidth if enabled
+                    else QtWidgets.QPlainTextEdit.NoWrap)
+            self.editor.setLineWrapMode(mode)
+            # share the display preference between all subsequently opened files
+            FreeCAD.ParamGet(
+                "User parameter:BaseApp/Preferences/Mod/EM").SetBool(
+                    "FCImportWrapText", enabled)
+
+        def showEditorContextMenu(self, position):
+            # extend Qt's normal editing menu with the shared View action
+            menu = self.editor.createStandardContextMenu()
+            menu.addSeparator()
+            menu.addAction(self.wrapAction)
+            menu.addSeparator()
+            reload_action = menu.addAction(
+                translate("EM", "Save files and reload model"))
+            reload_action.triggered.connect(self.reloadModel)
+            menu.exec_(self.editor.mapToGlobal(position))
+            menu.deleteLater()
 
         def loadFile(self):
             with open(self.path, "r", encoding="utf-8-sig",
@@ -436,6 +564,7 @@ if FreeCAD.GuiUp:
                 event.ignore()
 
 
+    # map canonical file paths to their currently open MDI editor windows
     _fc_text_windows = {}
 
 
@@ -448,12 +577,15 @@ if FreeCAD.GuiUp:
         return mdi_areas[0] if mdi_areas else None
 
 
-    def _open_fc_text_file(path):
+    def _open_fc_text_file(path, root_path=None, model=None):
         path = os.path.abspath(path)
         identity = os.path.normcase(os.path.realpath(path))
         existing = _fc_text_windows.get(identity)
+        # activate an existing editor instead of opening duplicate views
         if existing is not None:
             try:
+                if root_path is not None:
+                    existing.setImportContext(root_path, model)
                 existing.show()
                 existing.raise_()
                 mdi_area = existing.mdiArea()
@@ -471,12 +603,15 @@ if FreeCAD.GuiUp:
             return None
         try:
             window = _FCTextWindow(path)
+            if root_path is not None:
+                window.setImportContext(root_path, model)
         except OSError as error:
             FreeCAD.Console.PrintError(
                 translate("EM", "Cannot open FasterCap text file ") +
                 "'" + path + "': " + str(error) + "\n")
             return None
 
+        # register the editor with both FreeCAD's MDI area and the local cache
         mdi_area.addSubWindow(window)
         _fc_text_windows[identity] = window
 
@@ -524,6 +659,7 @@ if FreeCAD.GuiUp:
             self.buttons.rejected.connect(self.reject)
             layout.addWidget(self.buttons)
 
+            # restore the last import location and text-view selection
             preferences = FreeCAD.ParamGet(
                 "User parameter:BaseApp/Preferences/Mod/EM")
             self.folder = preferences.GetString(
@@ -554,6 +690,7 @@ if FreeCAD.GuiUp:
                     self, translate("EM", "Invalid FasterCap input file"),
                     translate("EM", "Select an existing input file."))
                 return
+            # remember successful dialog choices for the next import
             preferences = FreeCAD.ParamGet(
                 "User parameter:BaseApp/Preferences/Mod/EM")
             preferences.SetString("FCImportFolder", os.path.dirname(filename))
@@ -584,6 +721,7 @@ if FreeCAD.GuiUp:
             if FreeCAD.ActiveDocument is None:
                 FreeCAD.newDocument(_fc_document_name(dialog.selectedFile()))
             document = FreeCAD.ActiveDocument
+            # make the complete hierarchy import one undoable FreeCAD operation
             document.openTransaction(translate(
                 "EM", "Import FasterCap / FastCap file"))
             try:
@@ -602,4 +740,5 @@ if FreeCAD.GuiUp:
                     str(error) + "\n")
 
 
+    # register the command only when the graphical interface is available
     FreeCADGui.addCommand('EM_FCImport', _CommandFCImport())
