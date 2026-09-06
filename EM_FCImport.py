@@ -403,13 +403,21 @@ if FreeCAD.GuiUp:
             self.editor.setFont(fixed_font)
             layout.addWidget(self.editor)
 
-            # retain an explicit Save button in addition to the standard shortcut
+            # provide file controls without replacing the standard shortcut
             button_layout = QtWidgets.QHBoxLayout()
             button_layout.addStretch()
             save_button = QtWidgets.QPushButton(
                 translate("EM", "Save"), container)
             save_button.clicked.connect(self.saveFile)
             button_layout.addWidget(save_button)
+            save_all_button = QtWidgets.QPushButton(
+                translate("EM", "Save All"), container)
+            save_all_button.clicked.connect(self.saveAllFiles)
+            button_layout.addWidget(save_all_button)
+            close_all_button = QtWidgets.QPushButton(
+                translate("EM", "Close All"), container)
+            close_all_button.clicked.connect(self.closeAllEditors)
+            button_layout.addWidget(close_all_button)
             layout.addLayout(button_layout)
 
             self.setWidget(container)
@@ -539,6 +547,27 @@ if FreeCAD.GuiUp:
             FreeCAD.Console.PrintMessage(
                 translate("EM", "Saved FasterCap file ") +
                 "'" + self.path + "'\n")
+            return True
+
+        def saveAllFiles(self):
+            """Save every open FasterCap / FastCap text editor."""
+            for editor in list(_fc_text_windows.values()):
+                try:
+                    if not editor.saveFile():
+                        return False
+                except RuntimeError:
+                    continue
+            return True
+
+        def closeAllEditors(self):
+            """Close every input editor, stopping if a close is cancelled."""
+            for editor in list(_fc_text_windows.values()):
+                try:
+                    # closeEvent asks how to handle each modified document
+                    if not editor.close():
+                        return False
+                except RuntimeError:
+                    continue
             return True
 
         def closeEvent(self, event):
