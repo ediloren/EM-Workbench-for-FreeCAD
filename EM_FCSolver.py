@@ -35,6 +35,7 @@ EMFCSOLVER_UNITS = ["km", "m", "cm", "mm", "um", "nm", "in", "mils"]
 EMFCSOLVER_UNITS_VALS = [1e3, 1, 1e-2, 1e-3, 1e-6, 1e-9, 2.54e-2, 2.54e-5]
 EMFCSOLVER_DEFUNITS = "mm"
 EMFCSOLVER_DEF_SPACE_PERMITTIVITY = 1.0
+EMFCSOLVER_DEF_GEOMETRY_TOLERANCE = 1.0e-7
 # FasterCap defaults, from CAutoRefGlobalVars::Reset()
 EMFCSOLVER_DEF_AUTO_MAX_ERR = 0.01
 EMFCSOLVER_DEF_MESH_EPS = 0.1
@@ -96,7 +97,8 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
                  partitioningDepth=None, permittivityFactor=None,
                  iterationTol=None, folder=None, filename=None,
                  dimension=None, spacePermittivity=None,
-                 referenceConductor=None, name='FCSolver'):
+                 referenceConductor=None, name='FCSolver',
+                 geometryTolerance=None):
     '''Create the persistent global FasterCap / FastCap settings object.
 
        'dimension' selects a 2D or 3D model and 'solver' selects FasterCap or
@@ -104,6 +106,8 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
             permittivity used as a fallback by newly created FC objects.
        'referenceConductor' identifies the global zero-potential conductor in
             2D and is hidden from the property editor while Dimension is 3D.
+       'geometryTolerance' controls numerical comparisons only; it does not
+            remove or close physical gaps or features.
        Remaining arguments store solver command-line settings for later use.
     '''
     if FreeCAD.ActiveDocument is None:
@@ -125,6 +129,9 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
     obj.SpacePermittivity = (
         EMFCSOLVER_DEF_SPACE_PERMITTIVITY
         if spacePermittivity is None else spacePermittivity)
+    obj.GeometryTolerance = (
+        EMFCSOLVER_DEF_GEOMETRY_TOLERANCE
+        if geometryTolerance is None else geometryTolerance)
     if referenceConductor is not None:
         obj.ReferenceConductor = referenceConductor
     obj.AutoMaxError = (EMFCSOLVER_DEF_AUTO_MAX_ERR
@@ -190,6 +197,15 @@ class _FCSolver:
                 QT_TRANSLATE_NOOP("App::Property", "Background relative permittivity of the model space"))
             obj.SpacePermittivity = (
                 EMFCSOLVER_DEF_SPACE_PERMITTIVITY, 1e-12, 1e+12, 0.1)
+        if "GeometryTolerance" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyFloatConstraint", "GeometryTolerance", "EM",
+                QT_TRANSLATE_NOOP(
+                    "App::Property",
+                    "Numerical tolerance for transient geometry candidate filtering and classification"))
+            obj.GeometryTolerance = (
+                EMFCSOLVER_DEF_GEOMETRY_TOLERANCE,
+                1e-12, 1e+6, EMFCSOLVER_DEF_GEOMETRY_TOLERANCE)
         if "ReferenceConductor" not in obj.PropertiesList:
             obj.addProperty(
                 "App::PropertyLink", "ReferenceConductor", "2D",

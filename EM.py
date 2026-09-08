@@ -72,6 +72,7 @@ from EM_VHInputFile import *
 from EM_FCSolver import *
 from EM_FCConductor import *
 from EM_FCDielectric import *
+from EM_FCGeometry import *
 from EM_FCImport import *
 
 # for debugging
