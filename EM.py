@@ -70,6 +70,8 @@ from EM_VHPort import *
 from EM_VHInputFile import *
 # FasterCap/FastCap specific
 from EM_FCSolver import *
+from EM_FCConductor import *
+from EM_FCDielectric import *
 from EM_FCImport import *
 
 # for debugging
@@ -121,3 +123,9 @@ from EM_FCImport import *
 #import EM_FCSolver
 #reload(EM_FCSolver)
 #from EM_FCSolver import *
+#import EM_FCConductor
+#reload(EM_FCConductor)
+#from EM_FCConductor import *
+#import EM_FCDielectric
+#reload(EM_FCDielectric)
+#from EM_FCDielectric import *

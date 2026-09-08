@@ -27,16 +27,14 @@ __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
 
 # defines
-#
-# supported capacitance solvers
+EMFCSOLVER_DIMENSIONS = ["3D", "2D"]
+EMFCSOLVER_DEFDIMENSION = "3D"
 EMFCSOLVER_SOLVERS = ["FasterCap", "FastCap"]
 EMFCSOLVER_DEFSOLVER = "FasterCap"
-# Units are not declared in a FasterCap / FastCap input file. They are kept
-# here so that the future geometry exporter can scale coordinates consistently
-# and the result importer can scale the capacitance matrix accordingly.
 EMFCSOLVER_UNITS = ["km", "m", "cm", "mm", "um", "nm", "in", "mils"]
 EMFCSOLVER_UNITS_VALS = [1e3, 1, 1e-2, 1e-3, 1e-6, 1e-9, 2.54e-2, 2.54e-5]
 EMFCSOLVER_DEFUNITS = "mm"
+EMFCSOLVER_DEF_SPACE_PERMITTIVITY = 1.0
 # FasterCap defaults, from CAutoRefGlobalVars::Reset()
 EMFCSOLVER_DEF_AUTO_MAX_ERR = 0.01
 EMFCSOLVER_DEF_MESH_EPS = 0.1
@@ -46,13 +44,12 @@ EMFCSOLVER_DEF_GMRES_TOL = 0.01
 EMFCSOLVER_DEF_EXPANSION_ORDER = 2
 EMFCSOLVER_DEF_PARTITIONING_DEPTH = 0
 EMFCSOLVER_DEF_PERMITTIVITY_FACTOR = 1.0
-# FastCap ABSTOL is compile-time configurable. Keep a neutral placeholder
-# until the workbench defines which FastCap binary/build it supports.
 EMFCSOLVER_DEF_ITERATION_TOL = 0.01
-# default input file name
 EMFCSOLVER_DEF_FILENAME = "fastercap_input_file.lst"
 
-import FreeCAD, FreeCADGui, os
+import os
+
+import FreeCAD
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -60,131 +57,234 @@ if FreeCAD.GuiUp:
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
-    def translate(ctxt,txt):
+    def translate(ctxt, txt):
         return txt
-    def QT_TRANSLATE_NOOP(ctxt,txt):
+    def QT_TRANSLATE_NOOP(ctxt, txt):
         return txt
     # \endcond
 
 __dir__ = os.path.dirname(__file__)
-iconPath = os.path.join( __dir__, 'Resources' )
+iconPath = os.path.join(__dir__, 'Resources')
 
-def makeFCSolver(solver=None,units=None,autoMaxErr=None,meshEps=None,
-                 meshCurvCoeff=None,gmresTol=None,expansionOrder=None,
-                 partitioningDepth=None,permittivityFactor=None,
-                 iterationTol=None,folder=None,filename=None,name='FCSolver'):
-    ''' Creates a FasterCap / FastCap Solver object
 
-        'solver' selects either "FasterCap" or "FastCap".
-        'units' specifies how one FreeCAD unit is interpreted by the exporter.
-        'autoMaxErr', 'meshEps', 'meshCurvCoeff' and 'gmresTol' are FasterCap
-            solver parameters corresponding to the -a, -m, -mc and -t options.
-        'expansionOrder', 'partitioningDepth', 'permittivityFactor' and
-            'iterationTol' are FastCap parameters corresponding to the -o, -d,
-            -p and -t options. A zero partitioning depth selects automatic mode.
-        'folder' is the folder into which the input file will be saved.
-        'filename' is the name of the file that will be exported.
-        'name' is the name of the object.
-    Example:
-        solver = makeFCSolver()
-'''
+def getFCSolver(document=None, createIfNotExisting=False):
+    '''Return the first FCSolver in a document, optionally creating one.'''
+    if document is None:
+        document = FreeCAD.ActiveDocument
+    if document is None:
+        return None
+    solvers = [obj for obj in document.Objects
+               if getattr(getattr(obj, "Proxy", None), "Type", None) ==
+               "FCSolver"]
+    if solvers:
+        return solvers[0]
+    if createIfNotExisting and document is FreeCAD.ActiveDocument:
+        return makeFCSolver()
+    return None
+
+
+def getFCSpacePermittivity(document=None):
+    '''Return the document background permittivity or the vacuum default.'''
+    solver = getFCSolver(document)
+    if solver is None or not hasattr(solver, "SpacePermittivity"):
+        return EMFCSOLVER_DEF_SPACE_PERMITTIVITY
+    return float(solver.SpacePermittivity)
+
+
+def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
+                 meshCurvCoeff=None, gmresTol=None, expansionOrder=None,
+                 partitioningDepth=None, permittivityFactor=None,
+                 iterationTol=None, folder=None, filename=None,
+                 dimension=None, spacePermittivity=None,
+                 referenceConductor=None, name='FCSolver'):
+    '''Create the persistent global FasterCap / FastCap settings object.
+
+       'dimension' selects a 2D or 3D model and 'solver' selects FasterCap or
+            FastCap. 'spacePermittivity' is the background relative
+            permittivity used as a fallback by newly created FC objects.
+       'referenceConductor' identifies the global zero-potential conductor in
+            2D and is hidden from the property editor while Dimension is 3D.
+       Remaining arguments store solver command-line settings for later use.
+    '''
+    if FreeCAD.ActiveDocument is None:
+        FreeCAD.Console.PrintWarning(
+            translate("EM", "No active document available. Cannot create FCSolver.\n"))
+        return None
+
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
-    # this adds the relevant properties to the object, making it a _FCSolver
     _FCSolver(obj)
-    # manage ViewProvider object
     if FreeCAD.GuiUp:
         _ViewProviderFCSolver(obj.ViewObject)
-    if solver in EMFCSOLVER_SOLVERS:
-        obj.Solver = solver
-    else:
-        obj.Solver = EMFCSOLVER_DEFSOLVER
-    if units in EMFCSOLVER_UNITS:
-        obj.Units = units
-    else:
-        obj.Units = EMFCSOLVER_DEFUNITS
-    obj.AutoMaxError = autoMaxErr if autoMaxErr is not None else EMFCSOLVER_DEF_AUTO_MAX_ERR
-    obj.MeshRefinement = meshEps if meshEps is not None else EMFCSOLVER_DEF_MESH_EPS
-    obj.MeshCurvature = meshCurvCoeff if meshCurvCoeff is not None else EMFCSOLVER_DEF_MESH_CURV_COEFF
-    obj.GmresTolerance = gmresTol if gmresTol is not None else EMFCSOLVER_DEF_GMRES_TOL
-    obj.ExpansionOrder = expansionOrder if expansionOrder is not None else EMFCSOLVER_DEF_EXPANSION_ORDER
-    obj.PartitioningDepth = partitioningDepth if partitioningDepth is not None else EMFCSOLVER_DEF_PARTITIONING_DEPTH
-    obj.PermittivityFactor = permittivityFactor if permittivityFactor is not None else EMFCSOLVER_DEF_PERMITTIVITY_FACTOR
-    obj.IterationTolerance = iterationTol if iterationTol is not None else EMFCSOLVER_DEF_ITERATION_TOL
-    obj.Filename = filename if filename is not None else EMFCSOLVER_DEF_FILENAME
-    if folder is not None:
-        obj.Folder = folder
-    else:
-        obj.Folder = FreeCAD.ConfigGet("UserHomePath")
-    # return the newly created Python object
+
+    obj.Dimension = (dimension if dimension in EMFCSOLVER_DIMENSIONS
+                     else EMFCSOLVER_DEFDIMENSION)
+    obj.TargetSolver = (solver if solver in EMFCSOLVER_SOLVERS
+                        else EMFCSOLVER_DEFSOLVER)
+    obj.Units = units if units in EMFCSOLVER_UNITS else EMFCSOLVER_DEFUNITS
+    obj.SpacePermittivity = (
+        EMFCSOLVER_DEF_SPACE_PERMITTIVITY
+        if spacePermittivity is None else spacePermittivity)
+    if referenceConductor is not None:
+        obj.ReferenceConductor = referenceConductor
+    obj.AutoMaxError = (EMFCSOLVER_DEF_AUTO_MAX_ERR
+                        if autoMaxErr is None else autoMaxErr)
+    obj.MeshRefinement = (EMFCSOLVER_DEF_MESH_EPS
+                          if meshEps is None else meshEps)
+    obj.MeshCurvature = (EMFCSOLVER_DEF_MESH_CURV_COEFF
+                         if meshCurvCoeff is None else meshCurvCoeff)
+    obj.GmresTolerance = (EMFCSOLVER_DEF_GMRES_TOL
+                          if gmresTol is None else gmresTol)
+    obj.ExpansionOrder = (EMFCSOLVER_DEF_EXPANSION_ORDER
+                          if expansionOrder is None else expansionOrder)
+    obj.PartitioningDepth = (EMFCSOLVER_DEF_PARTITIONING_DEPTH
+                             if partitioningDepth is None
+                             else partitioningDepth)
+    obj.PermittivityFactor = (EMFCSOLVER_DEF_PERMITTIVITY_FACTOR
+                              if permittivityFactor is None
+                              else permittivityFactor)
+    obj.IterationTolerance = (EMFCSOLVER_DEF_ITERATION_TOL
+                              if iterationTol is None else iterationTol)
+    obj.Filename = filename or EMFCSOLVER_DEF_FILENAME
+    obj.Folder = folder or FreeCAD.ConfigGet("UserHomePath")
+    obj.Proxy._syncReferenceEditor(obj)
+    if FreeCAD.GuiUp:
+        obj.ViewObject.hide()
     return obj
 
+
 class _FCSolver:
-    '''The EM FasterCap / FastCap Solver object'''
+    '''The persistent global EM FasterCap / FastCap settings object.'''
     def __init__(self, obj):
-        ''' Add properties '''
-        obj.addProperty("App::PropertyEnumeration","Solver","EM",QT_TRANSLATE_NOOP("App::Property","Capacitance solver used for the simulation"))
-        obj.addProperty("App::PropertyEnumeration","Units","EM",QT_TRANSLATE_NOOP("App::Property","Measurement units used when exporting geometry"))
-        obj.addProperty("App::PropertyFloatConstraint","AutoMaxError","FasterCap",QT_TRANSLATE_NOOP("App::Property","Maximum relative error for FasterCap automatic refinement (-a)"))
-        obj.addProperty("App::PropertyFloatConstraint","MeshRefinement","FasterCap",QT_TRANSLATE_NOOP("App::Property","FasterCap mesh relative refinement value (-m)"))
-        obj.addProperty("App::PropertyFloatConstraint","MeshCurvature","FasterCap",QT_TRANSLATE_NOOP("App::Property","FasterCap mesh curvature coefficient (-mc)"))
-        obj.addProperty("App::PropertyFloatConstraint","GmresTolerance","FasterCap",QT_TRANSLATE_NOOP("App::Property","FasterCap GMRES iteration tolerance (-t)"))
-        obj.addProperty("App::PropertyIntegerConstraint","ExpansionOrder","FastCap",QT_TRANSLATE_NOOP("App::Property","FastCap multipole expansion order (-o)"))
-        obj.addProperty("App::PropertyIntegerConstraint","PartitioningDepth","FastCap",QT_TRANSLATE_NOOP("App::Property","FastCap partitioning depth (-d); zero selects automatic mode"))
-        obj.addProperty("App::PropertyFloatConstraint","PermittivityFactor","FastCap",QT_TRANSLATE_NOOP("App::Property","FastCap permittivity factor (-p)"))
-        obj.addProperty("App::PropertyFloatConstraint","IterationTolerance","FastCap",QT_TRANSLATE_NOOP("App::Property","FastCap iterative loop tolerance (-t)"))
-        obj.addProperty("App::PropertyPath","Folder","EM",QT_TRANSLATE_NOOP("App::Property","Folder path for exporting the capacitance solver input file"))
-        obj.addProperty("App::PropertyString","Filename","EM",QT_TRANSLATE_NOOP("App::Property","Simulation filename when exporting the capacitance solver input file"))
-        obj.Proxy = self
         self.Type = "FCSolver"
         self.Object = obj
-        obj.Solver = EMFCSOLVER_SOLVERS
-        obj.Units = EMFCSOLVER_UNITS
-        # Constraints prevent values unsupported by the two command-line parsers.
-        obj.AutoMaxError = (EMFCSOLVER_DEF_AUTO_MAX_ERR, 1e-12, 1.0, 1e-4)
-        obj.MeshRefinement = (EMFCSOLVER_DEF_MESH_EPS, 1e-12, 1e+12, 0.01)
-        obj.MeshCurvature = (EMFCSOLVER_DEF_MESH_CURV_COEFF, 0.0, 1e+12, 0.1)
-        obj.GmresTolerance = (EMFCSOLVER_DEF_GMRES_TOL, 1e-12, 1.0, 1e-4)
-        obj.ExpansionOrder = (EMFCSOLVER_DEF_EXPANSION_ORDER, 1, 100, 1)
-        obj.PartitioningDepth = (EMFCSOLVER_DEF_PARTITIONING_DEPTH, 0, 100, 1)
-        obj.PermittivityFactor = (EMFCSOLVER_DEF_PERMITTIVITY_FACTOR, 0.0, 1e+12, 0.1)
-        obj.IterationTolerance = (EMFCSOLVER_DEF_ITERATION_TOL, 1e-12, 1.0, 1e-4)
+        self._validatingReference = False
+        self._ensureProperties(obj)
+        obj.Proxy = self
+        self._syncReferenceEditor(obj)
+
+    def _ensureProperties(self, obj):
+        if "Dimension" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyEnumeration", "Dimension", "EM",
+                QT_TRANSLATE_NOOP("App::Property", "Capacitance model dimension"))
+            obj.Dimension = EMFCSOLVER_DIMENSIONS
+            obj.Dimension = EMFCSOLVER_DEFDIMENSION
+        if "TargetSolver" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyEnumeration", "TargetSolver", "EM",
+                QT_TRANSLATE_NOOP("App::Property", "Capacitance solver used for the simulation"))
+            obj.TargetSolver = EMFCSOLVER_SOLVERS
+            legacy_solver = str(getattr(obj, "Solver", EMFCSOLVER_DEFSOLVER))
+            obj.TargetSolver = (legacy_solver if legacy_solver in EMFCSOLVER_SOLVERS
+                                else EMFCSOLVER_DEFSOLVER)
+        if "Units" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyEnumeration", "Units", "EM",
+                QT_TRANSLATE_NOOP("App::Property", "Measurement units used by the future geometry exporter"))
+            obj.Units = EMFCSOLVER_UNITS
+            obj.Units = EMFCSOLVER_DEFUNITS
+        if "SpacePermittivity" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyFloatConstraint", "SpacePermittivity", "EM",
+                QT_TRANSLATE_NOOP("App::Property", "Background relative permittivity of the model space"))
+            obj.SpacePermittivity = (
+                EMFCSOLVER_DEF_SPACE_PERMITTIVITY, 1e-12, 1e+12, 0.1)
+        if "ReferenceConductor" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyLink", "ReferenceConductor", "2D",
+                QT_TRANSLATE_NOOP("App::Property", "Zero-potential reference FCConductor for a 2D model"))
+
+        self._ensureSolverProperties(obj)
+        if "Solver" in obj.PropertiesList:
+            # Preserve early development documents while exposing the renamed
+            # TargetSolver property required by the persistent model.
+            obj.setEditorMode("Solver", 2)
+
+    def _ensureSolverProperties(self, obj):
+        definitions = [
+            ("App::PropertyFloatConstraint", "AutoMaxError", "FasterCap",
+             "Maximum relative error for FasterCap automatic refinement (-a)",
+             (EMFCSOLVER_DEF_AUTO_MAX_ERR, 1e-12, 1.0, 1e-4)),
+            ("App::PropertyFloatConstraint", "MeshRefinement", "FasterCap",
+             "FasterCap mesh relative refinement value (-m)",
+             (EMFCSOLVER_DEF_MESH_EPS, 1e-12, 1e+12, 0.01)),
+            ("App::PropertyFloatConstraint", "MeshCurvature", "FasterCap",
+             "FasterCap mesh curvature coefficient (-mc)",
+             (EMFCSOLVER_DEF_MESH_CURV_COEFF, 0.0, 1e+12, 0.1)),
+            ("App::PropertyFloatConstraint", "GmresTolerance", "FasterCap",
+             "FasterCap GMRES iteration tolerance (-t)",
+             (EMFCSOLVER_DEF_GMRES_TOL, 1e-12, 1.0, 1e-4)),
+            ("App::PropertyIntegerConstraint", "ExpansionOrder", "FastCap",
+             "FastCap multipole expansion order (-o)",
+             (EMFCSOLVER_DEF_EXPANSION_ORDER, 1, 100, 1)),
+            ("App::PropertyIntegerConstraint", "PartitioningDepth", "FastCap",
+             "FastCap partitioning depth (-d); zero selects automatic mode",
+             (EMFCSOLVER_DEF_PARTITIONING_DEPTH, 0, 100, 1)),
+            ("App::PropertyFloatConstraint", "PermittivityFactor", "FastCap",
+             "FastCap permittivity factor (-p)",
+             (EMFCSOLVER_DEF_PERMITTIVITY_FACTOR, 0.0, 1e+12, 0.1)),
+            ("App::PropertyFloatConstraint", "IterationTolerance", "FastCap",
+             "FastCap iterative loop tolerance (-t)",
+             (EMFCSOLVER_DEF_ITERATION_TOL, 1e-12, 1.0, 1e-4))]
+        for property_type, name, group, description, initial in definitions:
+            if name not in obj.PropertiesList:
+                obj.addProperty(property_type, name, group,
+                                QT_TRANSLATE_NOOP("App::Property", description))
+                setattr(obj, name, initial)
+        if "Folder" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyPath", "Folder", "EM",
+                QT_TRANSLATE_NOOP("App::Property", "Folder for future capacitance-solver input files"))
+            obj.Folder = FreeCAD.ConfigGet("UserHomePath")
+        if "Filename" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyString", "Filename", "EM",
+                QT_TRANSLATE_NOOP("App::Property", "Future capacitance-solver input filename"))
+            obj.Filename = EMFCSOLVER_DEF_FILENAME
+
+    def _syncReferenceEditor(self, obj):
+        if hasattr(obj, "setEditorMode") and hasattr(obj, "Dimension"):
+            obj.setEditorMode("ReferenceConductor",
+                              0 if obj.Dimension == "2D" else 2)
 
     def execute(self, obj):
-        ''' this method is mandatory. It is called on Document.recompute()
-    '''
-        # but nothing to do
-        return
+        '''Keep editor state synchronized without processing geometry.'''
+        self._syncReferenceEditor(obj)
 
     def onChanged(self, obj, prop):
-        ''' take action if an object property 'prop' changed
-    '''
-        if not hasattr(self,"Object"):
+        if not hasattr(self, "Object"):
             self.Object = obj
-        # TODO: Once the execution/export workflow is defined, use Solver to
-        # expose only the properties applicable to FasterCap or FastCap.
+        if prop == "Dimension":
+            self._syncReferenceEditor(obj)
+        elif (prop == "ReferenceConductor" and
+              not getattr(self, "_validatingReference", False)):
+            reference = obj.ReferenceConductor
+            if (reference is not None and
+                    getattr(getattr(reference, "Proxy", None), "Type", None) !=
+                    "FCConductor"):
+                self._validatingReference = True
+                obj.ReferenceConductor = None
+                self._validatingReference = False
+                FreeCAD.Console.PrintWarning(translate(
+                    "EM", "ReferenceConductor must link to an FCConductor.\n"))
 
-    def serialize(self,fid,headOrTail):
-        ''' Serialize the solver portion of a FasterCap / FastCap list file
+    def onDocumentRestored(self, obj):
+        self.Object = obj
+        self._validatingReference = False
+        self._ensureProperties(obj)
+        self._syncReferenceEditor(obj)
 
-            Geometry records cannot be emitted until FC conductor and dielectric
-            objects are defined. Solver controls are command-line options rather
-            than statements in the input file and are therefore not serialized.
-    '''
+    def serialize(self, fid, headOrTail):
+        '''Serialize only the existing solver header; geometry export is later.'''
         if headOrTail == "head":
             fid.write("* FasterCap / FastCap input file created using FreeCAD's ElectroMagnetic Workbench\n")
-            fid.write("* See http://www.freecad.org and http://www.fastfieldsolvers.com\n")
             fid.write("* Geometry units: " + self.Object.Units + "\n")
-            fid.write("\n")
-            # TODO: The future FC input-file exporter must serialize conductor
-            # (C), dielectric (D) and group (G) records after this header.
-        else:
-            # FasterCap / FastCap list files have no mandatory end statement.
-            return
+            fid.write("* Dimension: " + self.Object.Dimension + "\n\n")
 
     def getCommandLineOptions(self):
-        ''' Return solver command-line options represented by this object '''
-        if self.Object.Solver == "FasterCap":
+        '''Return command-line settings represented by this object.'''
+        if self.Object.TargetSolver == "FasterCap":
             return ["-a" + str(self.Object.AutoMaxError),
                     "-m" + str(self.Object.MeshRefinement),
                     "-mc" + str(self.Object.MeshCurvature),
@@ -199,66 +299,67 @@ class _FCSolver:
     def __getstate__(self):
         return self.Type
 
-    def __setstate__(self,state):
-        if state:
-            self.Type = state
+    def __setstate__(self, state):
+        self.Type = state or "FCSolver"
+
 
 class _ViewProviderFCSolver:
-    def __init__(self, obj):
-        ''' Set this object to the proxy object of the actual view provider '''
-        obj.Proxy = self
-        self.Object = obj.Object
+    '''View provider for the non-geometric global solver settings object.'''
+    def __init__(self, vobj):
+        vobj.Proxy = self
+        self.Object = vobj.Object
 
-    def attach(self, obj):
-        ''' Setup the scene sub-graph of the view provider, this method is mandatory '''
-        self.Object = obj.Object
-        return
+    def attach(self, vobj):
+        self.Object = vobj.Object
 
     def updateData(self, fp, prop):
-        ''' If a property of the handled feature has changed we have the chance to handle this here '''
         return
 
     def getDefaultDisplayMode(self):
-        ''' Return the name of the default display mode. It must be defined in getDisplayModes. '''
         return "Flat Lines"
 
     def onChanged(self, vp, prop):
-        ''' If the 'prop' property changed for the ViewProvider 'vp' '''
         return
 
     def getIcon(self):
-        ''' Return the icon which will appear in the tree view. '''
-        # TODO: Add Resources/EM_FCSolver.svg when the solver command is wired
-        # into the workbench. Use the existing generic solver icon meanwhile.
-        fcIcon = os.path.join(iconPath, 'EM_FCSolver.svg')
-        if os.path.exists(fcIcon):
-            return fcIcon
-        return os.path.join(iconPath, 'EM_FHSolver.svg')
+        return os.path.join(iconPath, 'EM_FCSolver.svg')
 
     def __getstate__(self):
         return None
 
-    def __setstate__(self,state):
+    def __setstate__(self, state):
         return None
 
+
 class _CommandFCSolver:
-    ''' The EM FasterCap / FastCap Solver command definition
-'''
+    '''The EM FasterCap / FastCap solver command definition.'''
     def GetResources(self):
-        return {'Pixmap'  : os.path.join(iconPath, 'EM_FCSolver.svg') ,
-                'MenuText': QT_TRANSLATE_NOOP("EM_FCSolver","FasterCap / FastCap Solver"),
-                'Accel': "E, C",
-                'ToolTip': QT_TRANSLATE_NOOP("EM_FCSolver","Creates a FasterCap / FastCap Solver object")}
+        return {
+            'Pixmap': os.path.join(iconPath, 'EM_FCSolver.svg'),
+            'MenuText': QT_TRANSLATE_NOOP(
+                "EM_FCSolver", "FasterCap / FastCap Solver"),
+            'Accel': "E, F",
+            'ToolTip': QT_TRANSLATE_NOOP(
+                "EM_FCSolver",
+                "Creates the global FasterCap / FastCap Solver settings object")}
 
     def IsActive(self):
-        return not FreeCAD.ActiveDocument is None
+        return FreeCAD.ActiveDocument is not None
 
     def Activated(self):
-        FreeCAD.ActiveDocument.openTransaction(translate("EM","Create FCSolver"))
+        existing = getFCSolver()
+        if existing is not None:
+            FreeCAD.Console.PrintWarning(translate(
+                "EM", "An FCSolver already exists in the active document.\n"))
+            FreeCADGui.Selection.clearSelection()
+            FreeCADGui.Selection.addSelection(existing)
+            return
+        FreeCAD.ActiveDocument.openTransaction(translate("EM", "Create FCSolver"))
         FreeCADGui.addModule("EM")
         FreeCADGui.doCommand('obj=EM.makeFCSolver()')
         FreeCAD.ActiveDocument.commitTransaction()
         FreeCAD.ActiveDocument.recompute()
 
+
 if FreeCAD.GuiUp:
-    FreeCADGui.addCommand('EM_FCSolver',_CommandFCSolver())
+    FreeCADGui.addCommand('EM_FCSolver', _CommandFCSolver())

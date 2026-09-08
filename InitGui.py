@@ -46,7 +46,8 @@ class EMWorkbench(Workbench):
         self.emfhtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPath", "EM_FHPlane",
                 "EM_FHPlaneHole", "EM_FHPlaneAddRemoveNodeHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile"]
         self.emvhtools = ["EM_VHSolver", "EM_VHConductor", "EM_VHPort", "EM_VHCondPortVoxelize", "EM_VHVoxelizeAll", "EM_VHInputFile"]
-        self.emfctools = ["EM_FCSolver", "EM_FCImport"]
+        self.emfctools = ["EM_FCSolver", "EM_FCConductor",
+                "EM_FCDielectric", "EM_FCImport"]
         # draft tools
         # setup menus
         self.draftcmdList = ["Draft_Line","Draft_Rectangle"]
