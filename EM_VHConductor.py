@@ -332,7 +332,7 @@ class _VHConductor:
                 obj.Shape = shape
         else:
             # make a dummy empty shape. Representation is through custom coin3d scenegraph.
-            obj.Shape = Part.makeShell([])
+            obj.Shape = Part.Shape()
         #if FreeCAD.GuiUp:
             # force shape recompute (even if we are using directly coin here)
         #    _ViewProviderVHConductor.updateData(obj.ViewObject.Proxy,obj.ViewObject,"Shape")
