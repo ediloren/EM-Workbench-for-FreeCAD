@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"
+     viewBox="0 0 64 64">
+  <title>Create FasterCap / FastCap panelization</title>
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8ae234"/>
+      <stop offset="1" stop-color="#4e9a06"/>
+    </linearGradient>
+  </defs>
+  <path d="M6 49L18 9l39 8-8 40z" fill="url(#surface)"
+        stroke="#2e3436" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M18 9l8 44M38 13l-4 42M8 38l44 5M12 24l43 7"
+        fill="none" stroke="#eeeeec" stroke-width="2"/>
+  <circle cx="18" cy="9" r="3" fill="#f57900"/>
+  <circle cx="57" cy="17" r="3" fill="#f57900"/>
+  <circle cx="49" cy="57" r="3" fill="#f57900"/>
+  <circle cx="6" cy="49" r="3" fill="#f57900"/>
+</svg>

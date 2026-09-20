@@ -35,15 +35,29 @@ EMFCDIELECTRIC_DEF_TRANSPARENCY = 65
 EMFCDIELECTRIC_DEF_ARROWCOLOR = (1.0, 0.2, 0.1)
 EMFCDIELECTRIC_DEF_ARROWSCALE = 8.0
 EMFCDIELECTRIC_MAX_ARROWS = 24
+EMFCDIELECTRIC_DEF_CURVATURE_TOLERANCE = 0.01
 
 import math
 import os
 
 import FreeCAD
+import Part
+
+# Architecture notes:
+# - An FCDielectric is a logical zero-thickness material interface backed by
+#   persistent links to FreeCAD boundary geometry.
+# - Inner and outer permittivity are interpreted relative to the final oriented
+#   normal; reversing Orientation never modifies the source TopoShape.
+# - Before panelization the live, visible Base objects provide the CAD display;
+#   selection-only arrows read those sources directly without copying topology.
+# - Splitting, side classification, and solver reference points are resolved
+#   only by the explicit transient panelization pipeline.
+# - Coin and selection state remain runtime-only view-provider data.
 
 from EM_FCCommon import (getFCBaseFromSelection, getFCBaseObjects,
-                         getFCObjectsFromSelection, hasFCObjectReference, hideFCBase,
-                         makeFCBoundaryShape, mergeFCBase, normalizeFCBase)
+                         getFCBaseShapes, getFCObjectsFromSelection,
+                         hasFCObjectReference, mergeFCBase, normalizeFCBase,
+                         syncFCBaseVisibility)
 from EM_FCSolver import getFCSpacePermittivity
 
 if FreeCAD.GuiUp:
@@ -51,6 +65,10 @@ if FreeCAD.GuiUp:
     from DraftTools import translate
     from pivy import coin
     from PySide.QtCore import QT_TRANSLATE_NOOP
+    from EM_FCPreview import (
+        attachFCPanelPreview, ensureFCPreviewProperties,
+        onFCPanelPreviewChanged, setFCPanelizationPreview,
+        setFCPanelPreviewSelected)
 else:
     # \cond
     def translate(ctxt, txt):
@@ -63,15 +81,19 @@ __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join(__dir__, 'Resources')
 
 
+# Validate links before allocating the wrapper, then snapshot material defaults
+# from the document solver so later background edits are never implicit.
 def makeFCDielectric(base=None, innerPermittivity=None,
                      outerPermittivity=None, orientation="Forward",
-                     hideBase=True, name='FCDielectric'):
+                     hideBase=False, name='FCDielectric'):
     '''Create one logical FasterCap / FastCap dielectric interface.
 
        A solid source defines a convenient closed interface through its
        boundary shell. Shells and open faces remain zero-thickness interfaces.
        Orientation arrows point toward OuterPermittivity; Reversed flips the
        overall direction relative to the current source-face normals.
+       'hideBase' is retained for call compatibility but ignored: live Base
+       objects remain visible until an explicit panelization is created.
     '''
     if FreeCAD.ActiveDocument is None:
         FreeCAD.Console.PrintWarning(
@@ -102,8 +124,8 @@ def makeFCDielectric(base=None, innerPermittivity=None,
         if outerPermittivity is None else outerPermittivity)
     if orientation in EMFCDIELECTRIC_ORIENTATIONS:
         obj.Orientation = orientation
-    if FreeCAD.GuiUp and hideBase:
-        hideFCBase(obj.Base)
+    if FreeCAD.GuiUp:
+        syncFCBaseVisibility(obj)
     return obj
 
 
@@ -114,7 +136,9 @@ def makeFCDielectricFromSelection(selection=None, **kwargs):
     return makeFCDielectric(getFCBaseFromSelection(selection), **kwargs)
 
 
-def addToFCDielectric(dielectric, base, hideBase=True):
+# New faces join the same logical interface; whole-object references supersede
+# separately selected subelements of that source.
+def addToFCDielectric(dielectric, base, hideBase=False):
     """Append source references to an existing dielectric interface."""
     if isinstance(dielectric, str) and FreeCAD.ActiveDocument is not None:
         dielectric = FreeCAD.ActiveDocument.getObject(dielectric)
@@ -130,9 +154,11 @@ def addToFCDielectric(dielectric, base, hideBase=True):
         FreeCAD.Console.PrintWarning(translate(
             "EM", "Select additional faces, shells, solids, compsolids, or compounds.\n"))
         return None
+    # Before panelization additions follow the FC object's visibility.  An
+    # existing snapshot is unchanged; new geometry joins it only on repanelize.
     dielectric.Base = mergeFCBase(dielectric.Base, additions)
-    if FreeCAD.GuiUp and hideBase:
-        hideFCBase(additions)
+    if FreeCAD.GuiUp and not dielectric.Panelized:
+        syncFCBaseVisibility(dielectric)
     return dielectric
 
 
@@ -144,6 +170,7 @@ def addToFCDielectricFromSelection(dielectric, selection=None, **kwargs):
         dielectric, getFCBaseFromSelection(selection), **kwargs)
 
 
+# The proxy stores physical interface data while its standard Shape stays empty.
 class _FCDielectric:
     '''The persistent EM FasterCap / FastCap dielectric-interface object.'''
     def __init__(self, obj):
@@ -186,6 +213,35 @@ class _FCDielectric:
                     "Forward arrows follow source-face normals; Reversed arrows point oppositely"))
             obj.Orientation = EMFCDIELECTRIC_ORIENTATIONS
             obj.Orientation = "Forward"
+        if "PanelCurvatureTolerance" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyFloatConstraint", "PanelCurvatureTolerance",
+                "Panelization",
+                QT_TRANSLATE_NOOP(
+                    "App::Property",
+                    "Approximate maximum relative curved-surface panel "
+                    "deviation (sagitta divided by minimum principal radius)"))
+            obj.PanelCurvatureTolerance = (
+                EMFCDIELECTRIC_DEF_CURVATURE_TOLERANCE,
+                1e-6, 0.5, 0.001)
+        for name, description in (
+                ("Panelized", "Whether a current transient panelization exists"),
+                ("PanelCount", "Number of generated transient panels"),
+                ("PanelErrorCount", "Number of panelization errors")):
+            if name not in obj.PropertiesList:
+                property_type = ("App::PropertyBool" if name == "Panelized"
+                                 else "App::PropertyInteger")
+                obj.addProperty(
+                    property_type, name, "Panelization",
+                    QT_TRANSLATE_NOOP("App::Property", description))
+                setattr(obj, name, False if name == "Panelized" else 0)
+            obj.setEditorMode(name, 1)
+            if hasattr(obj, "setPropertyStatus"):
+                try:
+                    obj.setPropertyStatus(name, "Output")
+                    obj.setPropertyStatus(name, "NoRecompute")
+                except (AttributeError, RuntimeError, TypeError):
+                    pass
 
     def _removeNestedBase(self, obj):
         if (getattr(self, "_guardingBase", False) or
@@ -200,21 +256,32 @@ class _FCDielectric:
             "EM", "Removed nested FC object references from FCDielectric Base.\n"))
 
     def execute(self, obj):
-        '''Refresh only the lightweight boundary display representation.'''
+        """Keep solver extraction and display copies out of recomputation."""
         self._removeNestedBase(obj)
-        obj.Shape = makeFCBoundaryShape(obj.Base)
+        # Retain Part::FeaturePython only as the owner of the custom Coin view.
+        obj.Shape = Part.Shape()
 
     def onChanged(self, obj, prop):
         if not hasattr(self, "Object"):
             self.Object = obj
         if prop == "Base":
             self._removeNestedBase(obj)
+            if FreeCAD.GuiUp and not getattr(obj, "Panelized", False):
+                syncFCBaseVisibility(obj)
 
     def onDocumentRestored(self, obj):
         self.Object = obj
         self._guardingBase = False
         self._ensureProperties(obj)
+        obj.Panelized = False
+        obj.PanelCount = 0
+        obj.PanelErrorCount = 0
         self._removeNestedBase(obj)
+        obj.Shape = Part.Shape()
+        if FreeCAD.GuiUp:
+            # Panel/reference nodes are transient after restore, so sources
+            # resume following the FC object's saved visibility.
+            syncFCBaseVisibility(obj)
 
     def __getstate__(self):
         return self.Type
@@ -223,6 +290,8 @@ class _FCDielectric:
         self.Type = state or "FCDielectric"
 
 
+# This provider combines source-normal aids, transient panel preview, and custom
+# selection synchronization without changing the physical object.
 class _ViewProviderFCDielectric:
     '''View provider with selection-only OuterPermittivity direction arrows.'''
     def __init__(self, vobj):
@@ -235,6 +304,7 @@ class _ViewProviderFCDielectric:
         self.Object = vobj.Object
 
     def _ensureProperties(self, vobj):
+        ensureFCPreviewProperties(vobj, dielectric=True)
         if "ArrowColor" not in vobj.PropertiesList:
             vobj.addProperty(
                 "App::PropertyColor", "ArrowColor", "Orientation",
@@ -273,41 +343,58 @@ class _ViewProviderFCDielectric:
         FreeCADGui.Selection.addObserver(self)
         self._updateArrowColor()
         self._rebuildArrows()
+        attachFCPanelPreview(self, vobj, dielectric=True)
 
     def _updateArrowColor(self):
         color = self.VObject.ArrowColor
         self.arrowColor.rgb.setValue(color[0], color[1], color[2])
 
-    def _sampleFaces(self):
-        faces = list(getattr(self.Object.Shape, "Faces", []))
+    def _baseFaces(self):
+        # Read the current linked topology directly; no face or shell is copied
+        # into the FCDielectric document object merely for display aids.
+        faces = []
+        for shape in getFCBaseShapes(self.Object.Base):
+            faces.extend(getattr(shape, "Faces", []))
+        return faces
+
+    def _sampleFaces(self, faces):
         if len(faces) <= EMFCDIELECTRIC_MAX_ARROWS:
             return faces
         step = float(len(faces)) / EMFCDIELECTRIC_MAX_ARROWS
         return [faces[int(index * step)]
                 for index in range(EMFCDIELECTRIC_MAX_ARROWS)]
 
+    def _baseDiagonal(self, faces):
+        boxes = [getattr(face, "BoundBox", None) for face in faces]
+        boxes = [bbox for bbox in boxes if bbox is not None]
+        if not boxes:
+            return 0.0
+        return math.sqrt(
+            (max(bbox.XMax for bbox in boxes) -
+             min(bbox.XMin for bbox in boxes)) ** 2 +
+            (max(bbox.YMax for bbox in boxes) -
+             min(bbox.YMin for bbox in boxes)) ** 2 +
+            (max(bbox.ZMax for bbox in boxes) -
+             min(bbox.ZMin for bbox in boxes)) ** 2)
+
     def _rebuildArrows(self):
         if not hasattr(self, "arrowCoordinates"):
             return
+        if bool(getattr(self.Object, "Panelized", False)):
+            self._showArrows(False)
+            return
         points = []
         counts = []
-        shape = getattr(self.Object, "Shape", None)
-        bbox = getattr(shape, "BoundBox", None)
-        if bbox is not None:
-            diagonal = math.sqrt(
-                bbox.XLength * bbox.XLength +
-                bbox.YLength * bbox.YLength +
-                bbox.ZLength * bbox.ZLength)
-        else:
-            diagonal = 0.0
-        length = diagonal * float(self.VObject.ArrowScale) / 100.0
+        faces = self._baseFaces()
+        length = (self._baseDiagonal(faces) *
+                  float(self.VObject.ArrowScale) / 100.0)
         if length <= 1e-12:
             length = 1.0
 
         reverse = str(self.Object.Orientation) == "Reversed"
-        # Phase 1 previews the copied BRep normals. A later geometry stage can
-        # normalize connected faces before applying this overall direction.
-        for face in self._sampleFaces():
+        # The unpanelized aid previews live Base normals.  Panelization later
+        # normalizes connected faces before applying this overall direction.
+        for face in self._sampleFaces(faces):
             try:
                 umin, umax, vmin, vmax = face.ParameterRange
                 normal = face.normalAt(
@@ -346,6 +433,9 @@ class _ViewProviderFCDielectric:
 
     def _showArrows(self, show):
         if hasattr(self, "arrowSwitch"):
+            show = bool(
+                show and self.VObject.Visibility and
+                not getattr(self.Object, "Panelized", False))
             self.arrowSwitch.whichChild = (
                 coin.SO_SWITCH_ALL if show else coin.SO_SWITCH_NONE)
 
@@ -353,9 +443,12 @@ class _ViewProviderFCDielectric:
         try:
             selected = FreeCADGui.Selection.getSelection(
                 self.Object.Document.Name)
-            self._showArrows(self.Object in selected)
+            selected = self.Object in selected
+            self._showArrows(selected)
+            setFCPanelPreviewSelected(self, selected)
         except (AttributeError, RuntimeError):
             self._showArrows(False)
+            setFCPanelPreviewSelected(self, False)
 
     # FreeCAD selection-observer callbacks keep arrows visible only while the
     # logical dielectric object is selected.
@@ -363,6 +456,7 @@ class _ViewProviderFCDielectric:
         if (document == self.Object.Document.Name and
                 obj == self.Object.Name):
             self._showArrows(True)
+            setFCPanelPreviewSelected(self, True)
 
     def removeSelection(self, document, obj, subelement):
         if (document == self.Object.Document.Name and
@@ -376,16 +470,37 @@ class _ViewProviderFCDielectric:
     def clearSelection(self, document):
         if not document or document == self.Object.Document.Name:
             self._showArrows(False)
+            setFCPanelPreviewSelected(self, False)
+
+    def setPanelizationPreview(self, panelization):
+        setFCPanelizationPreview(self, panelization)
+        if panelization is None:
+            self._rebuildArrows()
+        self._syncSelection()
 
     def updateData(self, fp, prop):
-        if prop in ("Shape", "Orientation"):
+        if prop == "Panelized":
+            if fp.Panelized:
+                self._showArrows(False)
+            else:
+                self._rebuildArrows()
+                self._syncSelection()
+        elif (prop in ("Base", "Shape", "Orientation") and
+              not getattr(fp, "Panelized", False)):
             self._rebuildArrows()
+            self._syncSelection()
 
     def onChanged(self, vp, prop):
         if prop == "ArrowColor" and hasattr(self, "arrowColor"):
             self._updateArrowColor()
         elif prop == "ArrowScale":
             self._rebuildArrows()
+            self._syncSelection()
+        elif prop == "Visibility":
+            if not getattr(self.Object, "Panelized", False):
+                syncFCBaseVisibility(self.Object)
+            self._syncSelection()
+        onFCPanelPreviewChanged(self, prop)
 
     def claimChildren(self):
         return getFCBaseObjects(self.Object.Base) if hasattr(self, "Object") else []
@@ -409,6 +524,8 @@ class _ViewProviderFCDielectric:
         return None
 
 
+# One selected dielectric selects append mode; other valid geometry creates a
+# fresh interface wrapper.
 class _CommandFCDielectric:
     '''The EM FasterCap / FastCap dielectric command definition.'''
     def GetResources(self):

@@ -18,6 +18,19 @@ This module never creates document objects. Its entry points are called
 explicitly by later solver workflows, not by FeaturePython recompute.
 """
 
+# Geometry pipeline notes:
+# - Persistent links become copied transient shapes with full source provenance.
+# - Interacting solids of one conductor are union-normalized transiently so
+#   buried overlap faces never enter material resolution or island meshing.
+# - Solids are retained for point classification while faces form components.
+# - Duplicate faces are removed before edge-connected orientation propagation.
+# - Solid classifiers normalize outward orientation where a source solid exists.
+# - Sweep indexes reject impossible pairs before costly OpenCascade operations;
+#   candidate filtering never replaces exact topology tests.
+# - GeometryTolerance compares geometry but never heals or closes model gaps.
+# - Diagnostics retain object, component, source, and face locations.
+# - No document object is created by extraction; the model is disposable.
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -122,6 +135,9 @@ class FCBoundingBox:
             max(self.ymax, other.ymax), max(self.zmax, other.zmax))
 
 
+# Broad-phase acceleration -------------------------------------------------
+# Entries are sorted on X; active candidates are then checked on all axes.
+# This avoids an all-pairs OCC workload without discarding exact overlaps.
 class FCBoundingBoxIndex:
     """Reusable sweep-and-prune index for transient geometry records."""
 
@@ -204,6 +220,8 @@ class FCSourceReference:
 
 
 @dataclass
+# Classification retains original solids separately from extracted faces so
+# material-side probes can distinguish inside, boundary, and outside states.
 class FCClassifierSolid:
     """Retained source solid and provenance for point classification."""
 
@@ -295,6 +313,8 @@ class FCEntityGeometry:
 
 
 @dataclass
+# The model centralizes reusable candidate queries and ensures each later stage
+# applies the same tolerance and provenance rules.
 class FCGeometryModel:
     """Complete transient Phase 2 extraction result."""
 
@@ -359,6 +379,9 @@ def _fc_type(obj):
     return getattr(getattr(obj, "Proxy", None), "Type", None)
 
 
+# Topological identity helpers --------------------------------------------
+# OpenCascade bindings differ slightly across FreeCAD releases, so these
+# wrappers preserve identity semantics while tolerating API variants.
 def _shape_hash(shape):
     try:
         return int(shape.hashCode())
@@ -418,6 +441,8 @@ def _validate_scalar(value, name):
     return number
 
 
+# Validate all document-wide assumptions before touching source geometry; a
+# failed context therefore cannot leave a partially extracted model.
 def buildFCSolverContext(document=None, solver=None):
     """Build a validated solver context or raise a clear configuration error."""
     if document is None:
@@ -485,6 +510,9 @@ def _is_null_or_invalid(shape):
         return False
 
 
+# Recursively flatten compounds and compsolids while extending source_path.
+# Solids contribute both classifier volumes and boundary faces; open faces and
+# shells contribute boundaries only.
 def _walk_boundary_shape(shape, source_reference, path, raw_faces,
                          classifier_solids, diagnostics, fc_object):
     shape_type = getattr(shape, "ShapeType", "")
@@ -545,6 +573,8 @@ def _walk_boundary_shape(shape, source_reference, path, raw_faces,
         fc_object))
 
 
+# Remove repeated topological faces within one logical object, retaining the
+# first provenance record and reporting the redundant source as a diagnostic.
 def _deduplicate_faces(raw_faces, diagnostics, fc_object):
     buckets = {}
     unique = []
@@ -575,6 +605,8 @@ def _edge_orientation(edge):
     return None
 
 
+# Map undirected topological edge identities to incident faces.  Shared-edge
+# direction is evaluated separately when propagating orientation.
 def _edge_groups(raw_faces):
     buckets = {}
     groups = []
@@ -600,6 +632,8 @@ def _edge_groups(raw_faces):
     return groups
 
 
+# Traverse each edge-connected component, assigning local flips so adjacent
+# faces traverse their shared edge in opposite directions.
 def _connected_orientation(raw_faces):
     groups = _edge_groups(raw_faces)
     adjacency = [[] for _raw in raw_faces]
@@ -643,6 +677,8 @@ def _connected_orientation(raw_faces):
     return components, flips, groups, invalid_edges, nonmanifold_edges, conflicts
 
 
+# Probe candidates avoid relying on a single possibly singular center point;
+# the caller can try several interior locations before declaring uncertainty.
 def _face_probe_candidates(face):
     try:
         umin, umax, vmin, vmax = face.ParameterRange
@@ -654,6 +690,8 @@ def _face_probe_candidates(face):
             for fu in fractions for fv in fractions]
 
 
+# Compare small normal offsets with the source solid classifier to decide
+# whether a locally consistent face still needs a component-wide outward flip.
 def _solid_outward_flip(face, solid, tolerance):
     bbox = FCBoundingBox.from_shape(face)
     probe_distance = max(tolerance * 10.0, bbox.diagonal * 1.0e-7,
@@ -681,6 +719,8 @@ def _solid_outward_flip(face, solid, tolerance):
     return None
 
 
+# Prefer solid evidence from multiple faces and require a consistent result;
+# ambiguous open surfaces retain their source orientation.
 def _component_global_flip(raw_faces, indices, local_flips, tolerance):
     votes = []
     tested_solids = set()
@@ -702,6 +742,8 @@ def _component_global_flip(raw_faces, indices, local_flips, tolerance):
     return votes[0]
 
 
+# Resolve LinkSub entries at panelization time so the transient model reflects
+# the current parametric state of every linked source object.
 def _extract_sources(fc_object, diagnostics):
     source_references = []
     raw_faces = []
@@ -744,11 +786,135 @@ def _extract_sources(fc_object, diagnostics):
             _unique_identity(classifier_solids))
 
 
+# A conductor is one equipotential region even when its Base contains several
+# overlapping or face-touching solids. Normalize those volumes before boundary
+# extraction so the subsequent surface pipeline sees the same exterior that a
+# user-created Part Boolean union would expose. Disconnected solids remain
+# separate output solids, and zero-thickness Base faces/shells are retained.
+def _best_fused_face_source(face, solid_faces, tolerance):
+    face_box = FCBoundingBox.from_shape(face)
+    candidates = [
+        raw for raw in solid_faces
+        if face_box.overlaps(
+            FCBoundingBox.from_shape(raw.face), tolerance)]
+    if not candidates:
+        candidates = list(solid_faces)
+
+    best = None
+    best_area = -1.0
+    for raw in candidates:
+        try:
+            common = face.common(raw.face, tolerance)
+            area = sum(float(item.Area)
+                       for item in getattr(common, "Faces", []))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            area = 0.0
+        if area > best_area:
+            best, best_area = raw, area
+    if best is not None and best_area > tolerance * tolerance:
+        return best
+
+    best_distance = float("inf")
+    for raw in candidates:
+        try:
+            distance = float(face.distToShape(raw.face)[0])
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            continue
+        if distance < best_distance:
+            best, best_distance = raw, distance
+    return best
+
+
+def _normalize_conductor_solid_union(raw_faces, classifier_solids,
+                                     tolerance, diagnostics, fc_object):
+    """Replace interacting conductor solids by their OCC Boolean-union boundary."""
+    if len(classifier_solids) < 2:
+        return raw_faces, classifier_solids
+
+    try:
+        fused = classifier_solids[0].shape.multiFuse(
+            [item.shape for item in classifier_solids[1:]], tolerance)
+        fused = fused.removeSplitter()
+        fused_solids = list(getattr(fused, "Solids", []))
+        if not fused_solids and getattr(fused, "ShapeType", "") == "Solid":
+            fused_solids = [fused]
+        if not fused_solids or not fused.isValid():
+            raise RuntimeError("OCC returned no valid union solids")
+    except (AttributeError, RuntimeError, TypeError, ValueError) as error:
+        diagnostics.append(_diagnostic(
+            FC_DIAGNOSTIC_WARNING, "conductor_union_failed",
+            "Could not normalize overlapping/touching conductor solids; "
+            "continuing with their individual boundaries: %s" % error,
+            fc_object))
+        return raw_faces, classifier_solids
+
+    source_volume = sum(
+        float(getattr(item.shape, "Volume", 0.0))
+        for item in classifier_solids)
+    fused_volume = sum(
+        float(getattr(item, "Volume", 0.0))
+        for item in fused_solids)
+    volume_tolerance = max(
+        tolerance ** 3, source_volume * 1.0e-10)
+    changed = (
+        len(fused_solids) < len(classifier_solids) or
+        fused_volume < source_volume - volume_tolerance)
+    if not changed:
+        # Running a Boolean over truly disconnected solids adds cost and can
+        # replace stable source topology without improving the solver boundary.
+        return raw_faces, classifier_solids
+
+    solid_faces = [
+        raw for raw in raw_faces
+        if raw.classifier_solid is not None]
+    surface_faces = [
+        raw for raw in raw_faces
+        if raw.classifier_solid is None]
+    if not solid_faces:
+        return raw_faces, classifier_solids
+
+    normalized_faces = list(surface_faces)
+    normalized_solids = []
+    for solid_index, solid in enumerate(fused_solids):
+        solid_box = FCBoundingBox.from_shape(solid)
+        contributors = [
+            raw for raw in solid_faces
+            if solid_box.overlaps(
+                raw.classifier_solid.bbox, tolerance)]
+        source = contributors[0] if contributors else solid_faces[0]
+        classifier = FCClassifierSolid(
+            solid, source.source_object, source.source_subname,
+            source.source_path + (solid_index,), solid_box)
+        normalized_solids.append(classifier)
+
+        for face_index, face in enumerate(solid.Faces):
+            provenance = _best_fused_face_source(
+                face, contributors or solid_faces, tolerance)
+            if provenance is None:
+                provenance = source
+            normalized_faces.append(_RawFace(
+                face, provenance.source_object,
+                provenance.source_subname,
+                provenance.source_path + (face_index,),
+                "solid", classifier, provenance.source_reference))
+
+    return (
+        _deduplicate_faces(normalized_faces, diagnostics, fc_object),
+        normalized_solids)
+
+
+# Assemble one logical conductor or dielectric: extract, deduplicate, connect,
+# orient, bound, and index its faces while retaining classifier solids.
 def _build_entity(fc_object, context):
     kind = _fc_type(fc_object)
     diagnostics = []
     source_references, raw_faces, classifier_solids = _extract_sources(
         fc_object, diagnostics)
+    if kind == "FCConductor":
+        raw_faces, classifier_solids = _normalize_conductor_solid_union(
+            raw_faces, classifier_solids,
+            context.geometry_tolerance, diagnostics, fc_object)
+
     if not raw_faces:
         diagnostics.append(_diagnostic(
             FC_DIAGNOSTIC_ERROR, "empty_boundary",
@@ -912,6 +1078,8 @@ def _build_entity(fc_object, context):
     return entity
 
 
+# Public extraction performs no Boolean splitting.  It returns oriented source
+# geometry plus candidate indexes for the panelization stage.
 def extractFCGeometry(document=None, solver=None, objects=None):
     """Extract a complete transient Phase 2 geometry model.
 

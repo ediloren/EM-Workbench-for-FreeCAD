@@ -31,6 +31,16 @@ import re
 
 import FreeCAD
 
+# Import and editor notes:
+# - File discovery follows physical references and embedded F/FILE sections.
+# - Relative paths use the containing file, matching FasterCap semantics.
+# - Cycle and depth checks bound malformed or mutually recursive inputs.
+# - One editor represents each physical or logical section; only physical files
+#   can be saved because embedded sections have no independent pathname.
+# - GUI classes exist only with GuiUp, keeping console imports Qt-independent.
+# - Geometry parsing remains in import_fastercap.py; this module owns commands,
+#   discovery, syntax highlighting, and the optional MDI viewer.
+
 from import_fastercap import read_fastcap_file
 
 if FreeCAD.GuiUp:
@@ -97,6 +107,8 @@ def _fc_read_lines(path):
         return list(enumerate(stream, 1))
 
 
+# Scan top-level F/FILE markers once and map logical section names to their
+# bounded line ranges; nested parsing then reuses these ranges.
 def _fc_embedded_files(lines):
     """Return the definitions embedded between File and End records."""
     embedded = {}
@@ -116,6 +128,8 @@ def _fc_embedded_files(lines):
     return embedded
 
 
+# Return physical and embedded sources in traversal order while suppressing
+# duplicates, cycles, and references beyond the defensive depth limit.
 def getFCInputFiles(filename):
     '''Return the physical files in a FasterCap / FastCap input hierarchy.
 
@@ -133,6 +147,8 @@ def getFCInputFiles(filename):
     physical_files = set()
     logical_files = set()
 
+    # Physical files establish a new relative-path base and may themselves host
+    # several named embedded geometry sections.
     def parse_physical(path, depth):
         path = os.path.abspath(path)
         identity = os.path.normcase(os.path.realpath(path))
@@ -155,6 +171,8 @@ def getFCInputFiles(filename):
         files.append(path)
         parse_logical(path, lines, _fc_embedded_files(lines), None, depth)
 
+    # Logical sections inherit their parent path context but are not independently
+    # writable filesystem resources.
     def parse_logical(path, lines, embedded, section, depth):
         identity = (os.path.normcase(os.path.realpath(path)), section or "")
         if identity in logical_files:
@@ -189,6 +207,8 @@ def getFCInputFiles(filename):
     return files
 
 
+# Open every discovered source in the MDI viewer, preserving the root model so
+# reload can rebuild the same physical/logical editor set.
 def openFCTextFiles(filename, model=None):
     '''Open all physical files in a FasterCap / FastCap hierarchy for editing.
 
@@ -230,6 +250,8 @@ def _fc_document_name(path):
     return name
 
 
+# Geometry import delegates parsing to the reader, then optionally opens source
+# text; document creation and GUI presentation remain separate concerns.
 def importFCInputFile(filename, viewText=False):
     '''Import a FasterCap / FastCap file hierarchy into the active document.
 
@@ -351,6 +373,8 @@ if FreeCAD.GuiUp:
                                self.referenceFormat)
 
 
+    # Each subwindow tracks one source plus root-model context for coordinated
+    # reload, Save All, and shutdown behavior.
     class _FCTextWindow(QtWidgets.QMdiSubWindow):
         """Editable view of one physical FasterCap / FastCap input file."""
         def __init__(self, path, parent=None):
@@ -606,6 +630,8 @@ if FreeCAD.GuiUp:
         return mdi_areas[0] if mdi_areas else None
 
 
+    # Reuse an existing window by canonical source identity so recursive includes
+    # cannot open duplicate editors for the same physical file.
     def _open_fc_text_file(path, root_path=None, model=None):
         path = os.path.abspath(path)
         identity = os.path.normcase(os.path.realpath(path))
@@ -653,6 +679,8 @@ if FreeCAD.GuiUp:
         return window
 
 
+    # The dialog gathers only path and view preference; actual parsing stays in the
+    # command helper where console and scripted callers share behavior.
     class _FCImportDialog(QtWidgets.QDialog):
         """File selector with the optional text-view flag."""
         def __init__(self, parent=None):

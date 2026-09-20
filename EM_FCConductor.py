@@ -29,20 +29,35 @@ __url__ = "http://www.fastfieldsolvers.com"
 # defines
 EMFCCONDUCTOR_DEF_COLOR = (1.0, 0.67, 0.0)
 EMFCCONDUCTOR_DEF_LINECOLOR = (0.2, 0.12, 0.0)
+EMFCCONDUCTOR_DEF_CURVATURE_TOLERANCE = 0.01
 
 import os
 
 import FreeCAD
+import Part
+
+# Architecture notes:
+# - This module owns the persistent wrapper for one logical equipotential
+#   conductor; it does not own or copy the linked source CAD objects.
+# - Before panelization the live, visible Base objects provide all CAD display;
+#   the wrapper Shape stays empty and its tree children expose those sources.
+# - Oriented, split solver faces exist only in the transient geometry model.
+# - Panelization is explicit, never part of normal document recomputation.
+# - GUI Coin data belongs to the view provider and is rebuilt after restore.
 
 from EM_FCCommon import (getFCBaseFromSelection, getFCBaseObjects,
-                         getFCObjectsFromSelection, hasFCObjectReference, hideFCBase,
-                         makeFCBoundaryShape, mergeFCBase, normalizeFCBase)
+                         getFCBaseOwners, getFCObjectsFromSelection,
+                         hasFCObjectReference, mergeFCBase, normalizeFCBase,
+                         syncFCBaseVisibility)
 from EM_FCSolver import getFCSpacePermittivity
 
 if FreeCAD.GuiUp:
     import FreeCADGui
     from DraftTools import translate
     from PySide.QtCore import QT_TRANSLATE_NOOP
+    from EM_FCPreview import (
+        attachFCPanelPreview, ensureFCPreviewProperties,
+        onFCPanelPreviewChanged, setFCPanelizationPreview)
 else:
     # \cond
     def translate(ctxt, txt):
@@ -55,8 +70,10 @@ __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join(__dir__, 'Resources')
 
 
+# Create the wrapper only after validating all references, avoiding a partially
+# initialized document object when selection contains no usable boundary.
 def makeFCConductor(base=None, defaultPermittivity=None,
-                    hideBase=True, name='FCConductor'):
+                    hideBase=False, name='FCConductor'):
     '''Create one logical FasterCap / FastCap equipotential conductor.
 
        'base' is a list of source objects/subobjects suitable for an
@@ -64,8 +81,8 @@ def makeFCConductor(base=None, defaultPermittivity=None,
             parts of the same logical conductor.
        'defaultPermittivity' is the fallback surrounding relative
             permittivity. If omitted, it is copied from the document FCSolver.
-       'hideBase' hides referenced CAD objects after creation without changing
-            their geometry or display properties.
+       'hideBase' is retained for call compatibility but ignored: live Base
+            objects remain visible until an explicit panelization is created.
     '''
     if FreeCAD.ActiveDocument is None:
         FreeCAD.Console.PrintWarning(
@@ -81,6 +98,18 @@ def makeFCConductor(base=None, defaultPermittivity=None,
             "EM", "Select at least one face, shell, solid, compsolid, or compound to create an FCConductor.\n"))
         return None
 
+    owners = getFCBaseOwners(
+        FreeCAD.ActiveDocument, normalized_base, "FCConductor")
+    if owners:
+        owner_names = ", ".join(
+            getattr(owner, "Name", "FCConductor") for owner in owners)
+        FreeCAD.Console.PrintWarning(translate(
+            "EM",
+            "Selected geometry is already assigned to %s; no duplicate "
+            "FCConductor was created. Select that conductor together with "
+            "new geometry to extend it.\n") % owner_names)
+        return None
+
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
     _FCConductor(obj)
@@ -92,8 +121,8 @@ def makeFCConductor(base=None, defaultPermittivity=None,
                     if defaultPermittivity is None
                     else defaultPermittivity)
     obj.DefaultPermittivity = permittivity
-    if FreeCAD.GuiUp and hideBase:
-        hideFCBase(obj.Base)
+    if FreeCAD.GuiUp:
+        syncFCBaseVisibility(obj)
     return obj
 
 
@@ -104,7 +133,9 @@ def makeFCConductorFromSelection(selection=None, **kwargs):
     return makeFCConductor(getFCBaseFromSelection(selection), **kwargs)
 
 
-def addToFCConductor(conductor, base, hideBase=True):
+# Appending merges subelement names per source and treats a whole-object link as
+# superseding individual faces from that same object.
+def addToFCConductor(conductor, base, hideBase=False):
     """Append source references to an existing logical conductor."""
     if isinstance(conductor, str) and FreeCAD.ActiveDocument is not None:
         conductor = FreeCAD.ActiveDocument.getObject(conductor)
@@ -120,9 +151,21 @@ def addToFCConductor(conductor, base, hideBase=True):
         FreeCAD.Console.PrintWarning(translate(
             "EM", "Select additional faces, shells, solids, compsolids, or compounds.\n"))
         return None
+    owners = getFCBaseOwners(
+        conductor.Document, additions, "FCConductor", exclude=conductor)
+    if owners:
+        owner_names = ", ".join(
+            getattr(owner, "Name", "FCConductor") for owner in owners)
+        FreeCAD.Console.PrintWarning(translate(
+            "EM",
+            "Selected geometry is already assigned to %s and cannot also be "
+            "added to this conductor.\n") % owner_names)
+        return None
+    # Before panelization additions follow the FC object's visibility.  An
+    # existing panel snapshot and its independently visible sources stay fixed.
     conductor.Base = mergeFCBase(conductor.Base, additions)
-    if FreeCAD.GuiUp and hideBase:
-        hideFCBase(additions)
+    if FreeCAD.GuiUp and not conductor.Panelized:
+        syncFCBaseVisibility(conductor)
     return conductor
 
 
@@ -134,6 +177,7 @@ def addToFCConductorFromSelection(conductor, selection=None, **kwargs):
         conductor, getFCBaseFromSelection(selection), **kwargs)
 
 
+# The proxy owns persistent properties and the cheap recompute contract.
 class _FCConductor:
     '''The persistent EM FasterCap / FastCap conductor object.'''
     def __init__(self, obj):
@@ -158,6 +202,35 @@ class _FCConductor:
                     "App::Property",
                     "Fallback surrounding relative permittivity; generated boundary portions may override it"))
             obj.DefaultPermittivity = (1.0, 1e-12, 1e+12, 0.1)
+        if "PanelCurvatureTolerance" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyFloatConstraint", "PanelCurvatureTolerance",
+                "Panelization",
+                QT_TRANSLATE_NOOP(
+                    "App::Property",
+                    "Approximate maximum relative curved-surface panel "
+                    "deviation (sagitta divided by minimum principal radius)"))
+            obj.PanelCurvatureTolerance = (
+                EMFCCONDUCTOR_DEF_CURVATURE_TOLERANCE,
+                1e-6, 0.5, 0.001)
+        for name, description in (
+                ("Panelized", "Whether a current transient panelization exists"),
+                ("PanelCount", "Number of generated transient panels"),
+                ("PanelErrorCount", "Number of panelization errors")):
+            if name not in obj.PropertiesList:
+                property_type = ("App::PropertyBool" if name == "Panelized"
+                                 else "App::PropertyInteger")
+                obj.addProperty(
+                    property_type, name, "Panelization",
+                    QT_TRANSLATE_NOOP("App::Property", description))
+                setattr(obj, name, False if name == "Panelized" else 0)
+            obj.setEditorMode(name, 1)
+            if hasattr(obj, "setPropertyStatus"):
+                try:
+                    obj.setPropertyStatus(name, "Output")
+                    obj.setPropertyStatus(name, "NoRecompute")
+                except (AttributeError, RuntimeError, TypeError):
+                    pass
 
     def _removeNestedBase(self, obj):
         if (getattr(self, "_guardingBase", False) or
@@ -172,21 +245,33 @@ class _FCConductor:
             "EM", "Removed nested FC object references from FCConductor Base.\n"))
 
     def execute(self, obj):
-        '''Refresh only the lightweight boundary display representation.'''
+        """Keep solver extraction and display copies out of recomputation."""
         self._removeNestedBase(obj)
-        obj.Shape = makeFCBoundaryShape(obj.Base)
+        # Part::FeaturePython supplies the standard view-provider root needed
+        # by the Coin panel preview, but owns no duplicate Base topology.
+        obj.Shape = Part.Shape()
 
     def onChanged(self, obj, prop):
         if not hasattr(self, "Object"):
             self.Object = obj
         if prop == "Base":
             self._removeNestedBase(obj)
+            if FreeCAD.GuiUp and not getattr(obj, "Panelized", False):
+                syncFCBaseVisibility(obj)
 
     def onDocumentRestored(self, obj):
         self.Object = obj
         self._guardingBase = False
         self._ensureProperties(obj)
+        obj.Panelized = False
+        obj.PanelCount = 0
+        obj.PanelErrorCount = 0
         self._removeNestedBase(obj)
+        obj.Shape = Part.Shape()
+        if FreeCAD.GuiUp:
+            # Generated panels are transient and are not restored from the
+            # document, so sources resume following the FC object's visibility.
+            syncFCBaseVisibility(obj)
 
     def __getstate__(self):
         return self.Type
@@ -195,16 +280,25 @@ class _FCConductor:
         self.Type = state or "FCConductor"
 
 
+# The view provider owns only display state, child disclosure, and panel preview.
 class _ViewProviderFCConductor:
-    '''View provider for an independently styled conductor boundary.'''
+    """View provider for child disclosure and frozen panel snapshots."""
     def __init__(self, vobj):
         vobj.ShapeColor = EMFCCONDUCTOR_DEF_COLOR
         vobj.LineColor = EMFCCONDUCTOR_DEF_LINECOLOR
+        ensureFCPreviewProperties(vobj, dielectric=False)
         vobj.Proxy = self
+        self.VObject = vobj
         self.Object = vobj.Object
 
     def attach(self, vobj):
+        self.VObject = vobj
         self.Object = vobj.Object
+        ensureFCPreviewProperties(vobj, dielectric=False)
+        attachFCPanelPreview(self, vobj, dielectric=False)
+
+    def setPanelizationPreview(self, panelization):
+        setFCPanelizationPreview(self, panelization)
 
     def updateData(self, fp, prop):
         return
@@ -213,7 +307,10 @@ class _ViewProviderFCConductor:
         return "Flat Lines"
 
     def onChanged(self, vp, prop):
-        return
+        if (prop == "Visibility" and
+                not getattr(self.Object, "Panelized", False)):
+            syncFCBaseVisibility(self.Object)
+        onFCPanelPreviewChanged(self, prop)
 
     def claimChildren(self):
         return getFCBaseObjects(self.Object.Base) if hasattr(self, "Object") else []
@@ -228,6 +325,8 @@ class _ViewProviderFCConductor:
         return None
 
 
+# The command appends when exactly one conductor is selected; otherwise it
+# creates a new conductor from all usable extended-selection entries.
 class _CommandFCConductor:
     '''The EM FasterCap / FastCap conductor command definition.'''
     def GetResources(self):

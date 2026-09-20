@@ -26,12 +26,15 @@ __title__="FreeCAD E.M. Workbench FasterCap / FastCap common helpers"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
 
-import Part
-
-
 FC_OBJECT_TYPES = ("FCConductor", "FCDielectric", "FCSolver")
 
 
+# Persistent links are normalized here, while all solver-specific geometry work
+# remains in later transient stages.  Keeping this layer narrow prevents an
+# ordinary FeaturePython recompute from invoking expensive OpenCascade logic.
+#
+# FC object kinds share FreeCAD's generic FeaturePython TypeId, so the proxy
+# tag is the stable discriminator used throughout selection and validation.
 def isFCObject(obj):
     """Return whether an object belongs to the persistent FC object model."""
     return (getattr(getattr(obj, "Proxy", None), "Type", None) in
@@ -117,6 +120,36 @@ def getFCBaseFromSelection(selection):
     return normalizeFCBase(base)
 
 
+def fcBaseReferencesOverlap(first, second):
+    """Return whether two Base lists claim the same source subgeometry.
+
+    A whole-object link overlaps every subelement link on that source.  For
+    subelement-only links, at least one exact persistent subelement name must
+    occur in both lists.  Geometric overlaps between different CAD sources are
+    deliberately left to the panelization validator.
+    """
+    second_by_source = {}
+    for source, subelements in normalizeFCBase(second):
+        second_by_source.setdefault(id(source), set()).update(subelements)
+    for source, subelements in normalizeFCBase(first):
+        other = second_by_source.get(id(source))
+        if not other:
+            continue
+        names = set(subelements)
+        if "" in names or "" in other or names.intersection(other):
+            return True
+    return False
+
+
+def getFCBaseOwners(document, base, object_type, exclude=None):
+    """Return FC objects of one kind already claiming any proposed Base link."""
+    return [
+        obj for obj in getattr(document, "Objects", [])
+        if obj is not exclude and
+        getattr(getattr(obj, "Proxy", None), "Type", None) == object_type and
+        fcBaseReferencesOverlap(getattr(obj, "Base", []), base)]
+
+
 def mergeFCBase(base, additions):
     """Merge LinkSubList references without duplicating sources or subelements."""
     merged = []
@@ -149,11 +182,30 @@ def getFCBaseObjects(base):
 
 
 def hideFCBase(base):
-    '''Hide source CAD objects after creating their independent FC wrapper.'''
+    """Hide the live CAD sources represented by a generated panel snapshot."""
     for source in getFCBaseObjects(base):
         view = getattr(source, "ViewObject", None)
         if view is not None:
             view.hide()
+
+
+def showFCBase(base):
+    """Show live CAD sources when no generated panel snapshot is displayed."""
+    for source in getFCBaseObjects(base):
+        view = getattr(source, "ViewObject", None)
+        if view is not None:
+            view.show()
+
+
+def syncFCBaseVisibility(fc_object):
+    """Make unpanelized Base objects follow their FC object's visibility."""
+    view = getattr(fc_object, "ViewObject", None)
+    if view is None:
+        return
+    if bool(getattr(view, "Visibility", True)):
+        showFCBase(fc_object.Base)
+    else:
+        hideFCBase(fc_object.Base)
 
 
 def _fc_subshape(source, subelement):
@@ -172,40 +224,18 @@ def _fc_subshape(source, subelement):
         return None
 
 
-def _fc_boundary_parts(shape):
-    '''Return surface topology without Boolean operations or thickening.'''
-    if shape is None or not hasattr(shape, "ShapeType"):
-        return []
-    try:
-        if shape.isNull():
-            return []
-    except AttributeError:
-        pass
-
-    shape_type = shape.ShapeType
-    if shape_type == "Solid":
-        # A solid remains available through Base; only its boundary is copied
-        # into the FC object's independent display representation.
-        return [shell.copy() for shell in shape.Shells]
-    if shape_type in ("Shell", "Face"):
-        return [shape.copy()]
-    if shape_type in ("Compound", "CompSolid"):
-        parts = []
-        for child in shape.childShapes():
-            parts.extend(_fc_boundary_parts(child))
-        return parts
-    return []
-
-
-def makeFCBoundaryShape(base):
-    '''Build a lightweight compound of referenced solid boundaries/surfaces.
-
-       This is only the persistent object's display shape. It deliberately
-       performs no intersection, fuse, section, cleanup, or panelization.
-    '''
-    parts = []
+def getFCBaseShapes(base):
+    """Resolve the current linked shapes without copying their topology."""
+    shapes = []
     for source, subelements in normalizeFCBase(base):
         for subelement in subelements:
-            parts.extend(_fc_boundary_parts(
-                _fc_subshape(source, subelement)))
-    return Part.makeCompound(parts) if parts else Part.Shape()
+            shape = _fc_subshape(source, subelement)
+            if shape is None or not hasattr(shape, "ShapeType"):
+                continue
+            try:
+                if shape.isNull():
+                    continue
+            except AttributeError:
+                pass
+            shapes.append(shape)
+    return shapes

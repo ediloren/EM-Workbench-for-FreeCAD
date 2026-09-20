@@ -26,6 +26,16 @@ __title__="FreeCAD E.M. Workbench FasterCap / FastCap Solver Class"
 __author__ = "FastFieldSolvers S.R.L."
 __url__ = "http://www.fastfieldsolvers.com"
 
+# Solver-object architecture notes:
+# - One FCSolver is the authority for dimension, target, units, background
+#   material, and tolerances throughout a document.
+# - It stores settings only; extraction and panelization are explicit operations.
+# - Enumeration order is persistent data as well as a set of GUI choices.
+# - FasterCap and FastCap switches remain separate because similarly named
+#   controls do not necessarily have interchangeable meanings.
+# - GeometryTolerance never authorizes healing or topology modification.
+# - Property creation is idempotent and doubles as document migration.
+
 # defines
 EMFCSOLVER_DIMENSIONS = ["3D", "2D"]
 EMFCSOLVER_DEFDIMENSION = "3D"
@@ -36,6 +46,7 @@ EMFCSOLVER_UNITS_VALS = [1e3, 1, 1e-2, 1e-3, 1e-6, 1e-9, 2.54e-2, 2.54e-5]
 EMFCSOLVER_DEFUNITS = "mm"
 EMFCSOLVER_DEF_SPACE_PERMITTIVITY = 1.0
 EMFCSOLVER_DEF_GEOMETRY_TOLERANCE = 1.0e-7
+EMFCSOLVER_DEF_MAX_PANEL_SIZE = 1.0
 # FasterCap defaults, from CAutoRefGlobalVars::Reset()
 EMFCSOLVER_DEF_AUTO_MAX_ERR = 0.01
 EMFCSOLVER_DEF_MESH_EPS = 0.1
@@ -68,6 +79,8 @@ __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join(__dir__, 'Resources')
 
 
+# Proxy.Type is used because every solver is backed by a generic FeaturePython
+# document object rather than a dedicated C++ TypeId.
 def getFCSolver(document=None, createIfNotExisting=False):
     '''Return the first FCSolver in a document, optionally creating one.'''
     if document is None:
@@ -92,13 +105,15 @@ def getFCSpacePermittivity(document=None):
     return float(solver.SpacePermittivity)
 
 
+# Refuse a second settings object before allocation: downstream extraction must
+# never choose between conflicting global units or dimensions.
 def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
                  meshCurvCoeff=None, gmresTol=None, expansionOrder=None,
                  partitioningDepth=None, permittivityFactor=None,
                  iterationTol=None, folder=None, filename=None,
                  dimension=None, spacePermittivity=None,
                  referenceConductor=None, name='FCSolver',
-                 geometryTolerance=None):
+                 geometryTolerance=None, maxPanelSize=None):
     '''Create the persistent global FasterCap / FastCap settings object.
 
        'dimension' selects a 2D or 3D model and 'solver' selects FasterCap or
@@ -108,6 +123,7 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
             2D and is hidden from the property editor while Dimension is 3D.
        'geometryTolerance' controls numerical comparisons only; it does not
             remove or close physical gaps or features.
+       'maxPanelSize' is the FastCap maximum panel edge dimension in Units.
        Remaining arguments store solver command-line settings for later use.
     '''
     if FreeCAD.ActiveDocument is None:
@@ -115,7 +131,16 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
             translate("EM", "No active document available. Cannot create FCSolver.\n"))
         return None
 
-    obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
+    existing = getFCSolver(FreeCAD.ActiveDocument)
+    if existing is not None:
+        FreeCAD.Console.PrintWarning(translate(
+            "EM", "Only one FCSolver is allowed per document; returning the existing object.\n"))
+        return existing
+
+    # The solver owns document-wide settings but no TopoShape.  An application
+    # feature therefore provides all required persistence without presenting it
+    # as a geometric Part object.
+    obj = FreeCAD.ActiveDocument.addObject("App::FeaturePython", name)
     obj.Label = translate("EM", name)
     _FCSolver(obj)
     if FreeCAD.GuiUp:
@@ -132,6 +157,9 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
     obj.GeometryTolerance = (
         EMFCSOLVER_DEF_GEOMETRY_TOLERANCE
         if geometryTolerance is None else geometryTolerance)
+    obj.MaxPanelSize = (
+        EMFCSOLVER_DEF_MAX_PANEL_SIZE
+        if maxPanelSize is None else maxPanelSize)
     if referenceConductor is not None:
         obj.ReferenceConductor = referenceConductor
     obj.AutoMaxError = (EMFCSOLVER_DEF_AUTO_MAX_ERR
@@ -155,11 +183,10 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
     obj.Filename = filename or EMFCSOLVER_DEF_FILENAME
     obj.Folder = folder or FreeCAD.ConfigGet("UserHomePath")
     obj.Proxy._syncReferenceEditor(obj)
-    if FreeCAD.GuiUp:
-        obj.ViewObject.hide()
     return obj
 
 
+# The proxy also migrates restored documents by adding only missing properties.
 class _FCSolver:
     '''The persistent global EM FasterCap / FastCap settings object.'''
     def __init__(self, obj):
@@ -188,7 +215,7 @@ class _FCSolver:
         if "Units" not in obj.PropertiesList:
             obj.addProperty(
                 "App::PropertyEnumeration", "Units", "EM",
-                QT_TRANSLATE_NOOP("App::Property", "Measurement units used by the future geometry exporter"))
+                QT_TRANSLATE_NOOP("App::Property", "Measurement units used by generated solver geometry"))
             obj.Units = EMFCSOLVER_UNITS
             obj.Units = EMFCSOLVER_DEFUNITS
         if "SpacePermittivity" not in obj.PropertiesList:
@@ -206,6 +233,14 @@ class _FCSolver:
             obj.GeometryTolerance = (
                 EMFCSOLVER_DEF_GEOMETRY_TOLERANCE,
                 1e-12, 1e+6, EMFCSOLVER_DEF_GEOMETRY_TOLERANCE)
+        if "MaxPanelSize" not in obj.PropertiesList:
+            obj.addProperty(
+                "App::PropertyFloatConstraint", "MaxPanelSize", "FastCap",
+                QT_TRANSLATE_NOOP(
+                    "App::Property",
+                    "Maximum FastCap panel edge dimension in the selected Units"))
+            obj.MaxPanelSize = (
+                EMFCSOLVER_DEF_MAX_PANEL_SIZE, 1e-12, 1e+12, 0.1)
         if "ReferenceConductor" not in obj.PropertiesList:
             obj.addProperty(
                 "App::PropertyLink", "ReferenceConductor", "2D",
@@ -217,6 +252,8 @@ class _FCSolver:
             # TargetSolver property required by the persistent model.
             obj.setEditorMode("Solver", 2)
 
+    # Table-driven creation keeps target-specific option metadata and defaults
+    # together while preserving existing values during restoration.
     def _ensureSolverProperties(self, obj):
         definitions = [
             ("App::PropertyFloatConstraint", "AutoMaxError", "FasterCap",
@@ -251,12 +288,12 @@ class _FCSolver:
         if "Folder" not in obj.PropertiesList:
             obj.addProperty(
                 "App::PropertyPath", "Folder", "EM",
-                QT_TRANSLATE_NOOP("App::Property", "Folder for future capacitance-solver input files"))
+                QT_TRANSLATE_NOOP("App::Property", "Folder for FasterCap or FastCap export files"))
             obj.Folder = FreeCAD.ConfigGet("UserHomePath")
         if "Filename" not in obj.PropertiesList:
             obj.addProperty(
                 "App::PropertyString", "Filename", "EM",
-                QT_TRANSLATE_NOOP("App::Property", "Future capacitance-solver input filename"))
+                QT_TRANSLATE_NOOP("App::Property", "FasterCap or FastCap list filename"))
             obj.Filename = EMFCSOLVER_DEF_FILENAME
 
     def _syncReferenceEditor(self, obj):
@@ -292,12 +329,14 @@ class _FCSolver:
         self._syncReferenceEditor(obj)
 
     def serialize(self, fid, headOrTail):
-        '''Serialize only the existing solver header; geometry export is later.'''
+        '''Serialize the solver header for callers using the legacy interface.'''
         if headOrTail == "head":
             fid.write("* FasterCap / FastCap input file created using FreeCAD's ElectroMagnetic Workbench\n")
             fid.write("* Geometry units: " + self.Object.Units + "\n")
             fid.write("* Dimension: " + self.Object.Dimension + "\n\n")
 
+    # Translate persistent properties only at the process boundary; the document
+    # remains independent of executable availability and platform paths.
     def getCommandLineOptions(self):
         '''Return command-line settings represented by this object.'''
         if self.Object.TargetSolver == "FasterCap":
@@ -319,6 +358,8 @@ class _FCSolver:
         self.Type = state or "FCSolver"
 
 
+# There is no solver geometry to render; this provider supplies persistence and
+# the tree-view icon only.
 class _ViewProviderFCSolver:
     '''View provider for the non-geometric global solver settings object.'''
     def __init__(self, vobj):
@@ -330,9 +371,6 @@ class _ViewProviderFCSolver:
 
     def updateData(self, fp, prop):
         return
-
-    def getDefaultDisplayMode(self):
-        return "Flat Lines"
 
     def onChanged(self, vp, prop):
         return
