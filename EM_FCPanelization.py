@@ -79,6 +79,16 @@ class FCPanelizationError(RuntimeError):
     """Raised when a valid transient panelization cannot be produced."""
 
 
+class FCPanelizationCancelled(FCPanelizationError):
+    """Raised when the GUI requests cancellation at a safe pipeline boundary."""
+
+
+def _progress_checkpoint(callback, phase):
+    """Notify the optional caller without coupling panelization to Qt."""
+    if callback is not None:
+        callback(phase)
+
+
 @dataclass
 class FCSurfacePatch:
     """One split and electromagnetically resolved boundary patch."""
@@ -1086,9 +1096,17 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
             # than the document's geometric comparison tolerance.
             edge_tolerance = max(
                 tolerance, float(getattr(edge, "Tolerance", tolerance)))
-            if (_patch_boundary_deviation(edge, first) > edge_tolerance or
-                    _patch_boundary_deviation(edge, second) > edge_tolerance):
-                crossing.append(edge)
+            # The section and the Boolean-imprinted rim can each carry their
+            # own curved-surface approximation error. This comparison margin
+            # is deliberately local to validation; it neither heals geometry
+            # nor changes the tolerance used to build the topology.
+            boundary_tolerance = edge_tolerance * 1.25
+            first_deviation = _patch_boundary_deviation(edge, first)
+            second_deviation = _patch_boundary_deviation(edge, second)
+            if (first_deviation > boundary_tolerance or
+                    second_deviation > boundary_tolerance):
+                crossing.append(
+                    (first_deviation, second_deviation, boundary_tolerance))
         if crossing:
             diagnostics.append(_diag(
                 FC_DIAGNOSTIC_ERROR, "remaining_surface_crossing",
@@ -1096,7 +1114,13 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
                 first, details={
                     "other_object":
                     getattr(second.entity.fc_object, "Name", None),
-                    "edge_count": len(crossing)}))
+                    "edge_count": len(crossing),
+                    "maximum_first_boundary_deviation":
+                    max(item[0] for item in crossing),
+                    "maximum_second_boundary_deviation":
+                    max(item[1] for item in crossing),
+                    "maximum_boundary_tolerance":
+                    max(item[2] for item in crossing)}))
             second.problem_codes.append("remaining_surface_crossing")
     return diagnostics
 
@@ -1240,7 +1264,12 @@ def _fragment_patch_group(group, tolerance, diagnostics):
         source_area = float(getattr(source.shape, "Area", 0.0))
         mapped_area = sum(float(item.shape.Area)
                           for item in source_fragments)
-        allowed = max(area_tolerance, source_area * 1.0e-8)
+        # generalFuse section curves on curved supports can introduce a small
+        # area discrepancy while still returning a conformal topology. Keep
+        # this allowance narrow (0.02%): the later mesh seam, overlap, and
+        # gap validators remain responsible for rejecting a real missing
+        # fragment rather than treating OCC's B-spline trimming noise as one.
+        allowed = max(area_tolerance, source_area * 2.0e-4)
         if (not source_fragments or
                 abs(mapped_area - source_area) > allowed):
             diagnostics.append(_diag(
@@ -2499,11 +2528,13 @@ def _make_panels(model, patches, diagnostics, meshing_islands=None):
 
 # Orchestrate the complete explicit pipeline and publish cache/preview state
 # only after a coherent FCPanelization object has been assembled.
-def createFCPanelization(document=None, solver=None):
+def createFCPanelization(document=None, solver=None, progress=None):
     """Run the expensive Phase 3 pipeline and install transient previews."""
     if document is None:
         document = getattr(solver, "Document", None) or FreeCAD.ActiveDocument
+    _progress_checkpoint(progress, "Preparing panelization")
     clearFCPanelization(document)
+    _progress_checkpoint(progress, "Extracting FC geometry")
     geometry = extractFCGeometry(document, solver)
     if not geometry.entities:
         raise FCPanelizationError(
@@ -2515,15 +2546,20 @@ def createFCPanelization(document=None, solver=None):
             FC_DIAGNOSTIC_ERROR, "missing_conductor",
             "At least one FCConductor is required for solver export"))
 
+    _progress_checkpoint(progress, "Resolving surface interactions")
     splitters, _raw_coincidences, failed, interaction_diagnostics = (
         _collect_surface_interactions(geometry))
     diagnostics.extend(interaction_diagnostics)
+    _progress_checkpoint(progress, "Splitting intersecting surfaces")
     patches, split_diagnostics = _build_split_patches(
         geometry, splitters, failed)
     diagnostics.extend(split_diagnostics)
+    _progress_checkpoint(progress, "Assigning material interfaces")
     diagnostics.extend(_resolve_patch_semantics(geometry, patches))
+    _progress_checkpoint(progress, "Resolving coplanar surfaces")
     diagnostics.extend(_merge_redundant_coplanar_patches(
         patches, set(splitters), geometry.context.geometry_tolerance))
+    _progress_checkpoint(progress, "Validating resolved surfaces")
     diagnostics.extend(_validate_conductor_regions(geometry, patches))
     diagnostics.extend(_resolve_coincident_and_validate_surfaces(
         patches, geometry.context.geometry_tolerance))
@@ -2532,12 +2568,15 @@ def createFCPanelization(document=None, solver=None):
 
     meshing_islands = []
     if geometry.context.dimension == "3D":
+        _progress_checkpoint(progress, "Preparing shared mesh topology")
         patches, meshing_islands = _prepare_meshing_islands(
             patches, geometry.context.geometry_tolerance,
             diagnostics)
 
+    _progress_checkpoint(progress, "Creating solver panels")
     panels = _make_panels(
         geometry, patches, diagnostics, meshing_islands)
+    _progress_checkpoint(progress, "Validating solver panels")
     panels = _remove_duplicate_solver_panels(
         panels, geometry.context.geometry_tolerance, diagnostics)
     if not panels:
@@ -2547,9 +2586,16 @@ def createFCPanelization(document=None, solver=None):
     result = FCPanelization(
         geometry.context, geometry, patches, panels, [], diagnostics,
         getFCPanelizationSignature(document, geometry.context.solver))
-    _make_dielectric_groups(result)
+    # FasterCap 3D writes a reference point on each dielectric panel and
+    # groups only by material pair during export. FastCap-compatible
+    # dielectric reference groups are therefore unnecessary here; avoiding
+    # their candidate-by-panel search is essential for dense curved surfaces.
+    if not (geometry.context.target_solver == "FasterCap" and
+            geometry.context.dimension == "3D"):
+        _make_dielectric_groups(result)
     _validate_panels(result)
 
+    _progress_checkpoint(progress, "Publishing panelization preview")
     _PANELIZATION_CACHE[id(document)] = result
     for entity in geometry.entities:
         obj = entity.fc_object

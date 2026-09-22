@@ -282,6 +282,11 @@ class _FCDielectric:
         self._removeNestedBase(obj)
         obj.Shape = Part.Shape()
         if FreeCAD.GuiUp:
+            view = obj.ViewObject
+            if getattr(view, "Proxy", None) is None:
+                # FCStd files saved by FreeCADCmd have no GuiDocument.xml.
+                # Recreate child disclosure from the persistent Base links.
+                _ViewProviderFCDielectric(view).attach(view)
             # Panel/reference nodes are transient after restore, so sources
             # resume following the FC object's saved visibility.
             syncFCBaseVisibility(obj)

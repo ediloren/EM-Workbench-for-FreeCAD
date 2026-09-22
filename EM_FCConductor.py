@@ -272,6 +272,11 @@ class _FCConductor:
         self._removeNestedBase(obj)
         obj.Shape = Part.Shape()
         if FreeCAD.GuiUp:
+            view = obj.ViewObject
+            if getattr(view, "Proxy", None) is None:
+                # FCStd files saved by FreeCADCmd have no GuiDocument.xml.
+                # Recreate child disclosure from the persistent Base links.
+                _ViewProviderFCConductor(view).attach(view)
             # Generated panels are transient and are not restored from the
             # document, so sources resume following the FC object's visibility.
             syncFCBaseVisibility(obj)

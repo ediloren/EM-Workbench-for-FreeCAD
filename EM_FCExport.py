@@ -29,8 +29,8 @@ import tempfile
 import FreeCAD
 
 from EM_FCPanelization import (
-    FC_ELEMENT_SEGMENT, FCPanelizationError, createFCPanelization,
-    getFCPanelization, getFCPanelizationSignature)
+    FC_ELEMENT_SEGMENT, FCPanelizationCancelled, FCPanelizationError,
+    createFCPanelization, getFCPanelization, getFCPanelizationSignature)
 from EM_FCSolver import EMFCSOLVER_UNITS, EMFCSOLVER_UNITS_VALS
 
 if FreeCAD.GuiUp:
@@ -38,10 +38,11 @@ if FreeCAD.GuiUp:
     from DraftTools import translate
     from PySide.QtCore import QT_TRANSLATE_NOOP
     try:
-        from PySide import QtWidgets
+        from PySide import QtCore, QtWidgets
         QMessageBox = QtWidgets.QMessageBox
     except (ImportError, AttributeError):
-        from PySide import QtGui
+        from PySide import QtCore, QtGui
+        QtWidgets = QtGui
         QMessageBox = QtGui.QMessageBox
 else:
     def translate(context, text):
@@ -427,13 +428,46 @@ class _CommandFCPanelize:
         return FreeCAD.ActiveDocument is not None
 
     def Activated(self):
+        # The computational pipeline remains Qt-independent. This dialog only
+        # receives notifications at its safe phase boundaries, where it pumps
+        # events and can request a clean cancellation.
+        dialog = QtWidgets.QProgressDialog(
+            translate("EM", "Preparing panelization"),
+            translate("EM", "Cancel"), 0, 10,
+            FreeCADGui.getMainWindow())
+        dialog.setWindowTitle(translate(
+            "EM", "FasterCap/FastCap panelization"))
+        dialog.setWindowModality(QtCore.Qt.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.show()
+        progress_step = [0]
+
+        def progress(phase):
+            progress_step[0] = min(progress_step[0] + 1, dialog.maximum())
+            dialog.setLabelText(translate("EM", phase))
+            dialog.setValue(progress_step[0])
+            application = QtWidgets.QApplication.instance()
+            if application is not None:
+                application.processEvents()
+            if dialog.wasCanceled():
+                raise FCPanelizationCancelled("Panelization cancelled by user")
+
         try:
-            panelization = createFCPanelization(FreeCAD.ActiveDocument)
+            panelization = createFCPanelization(
+                FreeCAD.ActiveDocument, progress=progress)
+        except FCPanelizationCancelled:
+            FreeCAD.Console.PrintMessage(translate(
+                "EM", "FasterCap/FastCap panelization cancelled.\n"))
+            return
         except Exception as error:
             FreeCAD.Console.PrintError(
                 translate("EM", "FasterCap/FastCap panelization failed: %s\n")
                 % error)
             return
+        finally:
+            dialog.close()
         _print_diagnostics(panelization)
         errors = sum(item.severity == "error"
                      for item in panelization.diagnostics)
