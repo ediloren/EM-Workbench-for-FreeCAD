@@ -58,7 +58,7 @@ from EM_FCCommon import (getFCBaseFromSelection, getFCBaseObjects,
                          getFCBaseShapes, getFCObjectsFromSelection,
                          hasFCObjectReference, mergeFCBase, normalizeFCBase,
                          syncFCBaseVisibility)
-from EM_FCSolver import getFCSpacePermittivity
+from EM_FCSolver import getFCSolver, getFCSpacePermittivity
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -109,6 +109,9 @@ def makeFCDielectric(base=None, innerPermittivity=None,
             "EM", "Select at least one face, shell, solid, compsolid, or compound to create an FCDielectric.\n"))
         return None
 
+    # Create the default document solver before the dielectric snapshots its
+    # background permittivity; GUI calls keep both objects in one transaction.
+    getFCSolver(FreeCAD.ActiveDocument, createIfNotExisting=True)
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
     _FCDielectric(obj)

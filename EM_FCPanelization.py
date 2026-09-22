@@ -479,19 +479,6 @@ def _collect_surface_interactions(model):
         if not face_pairs:
             continue
 
-        # A component-level section amortizes OCC setup for dense interactions.
-        section_pool = None
-        if (first_component is not second_component and
-                len(face_pairs) >= 4 and first_component.shell is not None and
-                second_component.shell is not None):
-            try:
-                section_pool = list(getattr(
-                    first_component.shell.section(
-                        second_component.shell, tolerance),
-                    "Edges", []))
-            except (AttributeError, RuntimeError, TypeError, ValueError):
-                section_pool = None
-
         for first, second in face_pairs:
             if first is second:
                 continue
@@ -519,22 +506,15 @@ def _collect_surface_interactions(model):
             # numerically fragile.
             if conformal_edge:
                 continue
-            if section_pool is None:
-                edges = _section_edges(
-                    first, second, tolerance, diagnostics, failed_records,
-                    first_component, second_component)
-            else:
-                first_box = first.bbox
-                second_box = second.bbox
-                edges = []
-                for edge in section_pool:
-                    try:
-                        edge_box = FCBoundingBox.from_shape(edge)
-                    except (AttributeError, RuntimeError, ValueError):
-                        continue
-                    if (edge_box.overlaps(first_box, tolerance) and
-                            edge_box.overlaps(second_box, tolerance)):
-                        edges.append(edge)
+            # A shell-wide section cannot be routed back to individual faces
+            # by bounding boxes: a curve may touch a face's box at a point
+            # while lying entirely outside that trimmed face. Such unrelated
+            # edges can make SplitAPI return an unchanged face, leaving a
+            # conductor-covered dielectric region classified by one sample.
+            # Section the actual face pair so each splitter belongs to both.
+            edges = _section_edges(
+                first, second, tolerance, diagnostics, failed_records,
+                first_component, second_component)
             if edges:
                 _append_splitters(splitters, first, edges)
                 _append_splitters(splitters, second, edges)
@@ -561,24 +541,35 @@ def _flatten_shapes(value):
 def _split_face_once(face, splitter_edges, tolerance):
     if not splitter_edges:
         return [face], None
+    primary = []
     try:
         from BOPTools import SplitAPI
         result = SplitAPI.slice(face, splitter_edges, "Split", tolerance)
-        pieces = list(getattr(result, "Faces", []))
-        if pieces:
-            return pieces, None
+        primary = list(getattr(result, "Faces", []))
+        if len(primary) > 1:
+            return primary, None
     except (ImportError, AttributeError, RuntimeError, TypeError, ValueError):
         pass
 
+    # A one-face result can be the original, unsplit face. Give the alternate
+    # OCC splitter a chance before accepting that apparent success.
     try:
         result = Part.makeSplitShape(
             face, [(edge, face) for edge in splitter_edges])
-        pieces = [candidate for candidate in _flatten_shapes(result)
-                  if getattr(candidate, "ShapeType", "") == "Face"]
-        if pieces:
+        pieces = [piece for candidate in _flatten_shapes(result)
+                  for piece in (getattr(candidate, "Faces", []) if
+                                getattr(candidate, "ShapeType", "") != "Face"
+                                else [candidate])]
+        if len(pieces) > len(primary):
             return pieces, None
     except (AttributeError, RuntimeError, TypeError, ValueError) as error:
+        if primary:
+            return primary, None
         return [face], error
+    if primary:
+        return primary, None
+    if pieces:
+        return pieces, None
     return [face], RuntimeError("OCC returned no split faces")
 
 
@@ -994,10 +985,23 @@ def _coincident_patch_action(first, second, common_area, tolerance,
         dielectric.removed = True
 
 
-def _patch_boundary_distance(edge, patch):
+def _patch_boundary_deviation(edge, patch):
+    """Maximum sampled distance from an intersection edge to a face rim.
+
+    OCC edge-to-edge distToShape can stall on toroidal B-spline intersections.
+    Vertex-to-edge distances are fast for the same geometry. Testing points
+    along the edge also avoids mistaking one endpoint contact for an edge that
+    lies entirely on the patch boundary (the old minimum-distance test did).
+    """
     try:
-        boundary = Part.makeCompound(list(patch.shape.Edges))
-        return float(edge.distToShape(boundary)[0])
+        boundary_edges = list(patch.shape.Edges)
+        if not boundary_edges:
+            return float("inf")
+        samples = edge.discretize(Number=7)
+        return max(
+            min(float(Part.Vertex(point).distToShape(boundary)[0])
+                for boundary in boundary_edges)
+            for point in samples)
     except (AttributeError, RuntimeError, TypeError, ValueError):
         return float("inf")
 
@@ -1076,10 +1080,15 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
                     second.shape, tolerance), "Edges", []))
         except (AttributeError, RuntimeError, TypeError, ValueError):
             sections = []
-        crossing = [
-            edge for edge in sections
-            if (_patch_boundary_distance(edge, first) > tolerance or
-                _patch_boundary_distance(edge, second) > tolerance)]
+        crossing = []
+        for edge in sections:
+            # OCC section curves may carry a looser approximation tolerance
+            # than the document's geometric comparison tolerance.
+            edge_tolerance = max(
+                tolerance, float(getattr(edge, "Tolerance", tolerance)))
+            if (_patch_boundary_deviation(edge, first) > edge_tolerance or
+                    _patch_boundary_deviation(edge, second) > edge_tolerance):
+                crossing.append(edge)
         if crossing:
             diagnostics.append(_diag(
                 FC_DIAGNOSTIC_ERROR, "remaining_surface_crossing",
@@ -1103,7 +1112,15 @@ def _patches_touch(first, second, tolerance):
             _share_topological_vertex(first.shape, second.shape)):
         return True
     try:
-        return float(first.shape.distToShape(second.shape)[0]) <= tolerance
+        # A whole-face distance can stall on toroidal B-spline boundaries.
+        # Section detects edge and point contacts without solving that
+        # expensive global minimum-distance problem. A coincident face may
+        # have no section vertices, so retain a Boolean common fallback.
+        section = first.shape.section(second.shape, tolerance)
+        if section.Edges or section.Vertexes:
+            return True
+        common = first.shape.common(second.shape, tolerance)
+        return bool(common.Faces or common.Edges or common.Vertexes)
     except (AttributeError, RuntimeError, TypeError, ValueError):
         return False
 
@@ -1174,10 +1191,10 @@ def _group_needs_fragmentation(group, tolerance):
     """Detect contacts that are geometric but not yet shared OCC topology."""
     index = FCBoundingBoxIndex(group)
     for first, second in index.candidate_pairs(tolerance=tolerance):
+        # A shared vertex does not imply that a touching intersection edge is
+        # shared; the whole group must be imprinted before meshing.
         if (_patches_touch(first, second, tolerance) and
-                not _share_topological_edge(first.shape, second.shape) and
-                not _share_topological_vertex(
-                    first.shape, second.shape)):
+                not _share_topological_edge(first.shape, second.shape)):
             return True
     return False
 
@@ -1606,34 +1623,58 @@ def _segments_per_radius(relative_deviation):
     return math.sqrt(1.0 / (8.0 * relative_deviation))
 
 
-# Map a mesh sample back to a trimmed CAD face.  Netgen vertices lie on the
-# exact surface, while a triangle centroid lies on the planar chord; projecting
-# every sample onto the support surface handles both cases without confusing
-# adjacent trimmed faces that share only an edge.
+# Map a mesh sample back to a trimmed CAD face. Mesh.Topology stores vertices
+# at single precision, so its points can lie slightly beyond a trim despite
+# Netgen having placed them on that edge. Allow a few float32 ulps as well as
+# the model tolerance. A triangle centroid lies on the planar chord, so it
+# must still be projected to the curved support surface.
 def _projected_patch_distance(point, patch, tolerance):
     try:
         u, v = patch.shape.Surface.parameter(point)
         projected = patch.shape.valueAt(u, v)
+        coordinate_scale = max(abs(point.x), abs(point.y), abs(point.z))
+        mesh_tolerance = max(
+            tolerance * 10.0, coordinate_scale * 8.0 * 2.0 ** -23)
         if not patch.shape.isInside(
-                projected, tolerance * 10.0, True):
+                projected, mesh_tolerance, True):
+            # A rounded vertex can be on the actual CAD rim even when its
+            # nearest support-surface projection falls outside the trim.
+            # Limit exact point-to-edge checks to nearby edge bounding boxes.
+            vertex = Part.Vertex(point)
+            for boundary in patch.shape.Edges:
+                bbox = boundary.BoundBox
+                if not (
+                        bbox.XMin - mesh_tolerance <= point.x <= bbox.XMax + mesh_tolerance and
+                        bbox.YMin - mesh_tolerance <= point.y <= bbox.YMax + mesh_tolerance and
+                        bbox.ZMin - mesh_tolerance <= point.z <= bbox.ZMax + mesh_tolerance):
+                    continue
+                distance = float(vertex.distToShape(boundary)[0])
+                if distance <= mesh_tolerance:
+                    return distance
             return None
         return _distance(point, projected)
     except (AttributeError, RuntimeError, TypeError, ValueError):
         return None
 
 
-def _triangle_patch_score(triangle, patch, tolerance):
+def _triangle_patch_score(triangle, patch, tolerance, center_distance=None):
     vectors = [_tuple_vector(point) for point in triangle]
     center = sum(vectors[1:], vectors[0]) * (1.0 / 3.0)
     edge_scale = max(_panel_edge_lengths(triangle), default=0.0)
     if not patch.bbox.contains_point(
             center, max(tolerance * 10.0, edge_scale)):
         return None
+    if center_distance is None:
+        center_distance = _projected_patch_distance(
+            center, patch, tolerance)
+    if center_distance is None:
+        return None
     distances = [
         _projected_patch_distance(point, patch, tolerance)
-        for point in vectors + [center]]
+        for point in vectors]
     if any(distance is None for distance in distances):
         return None
+    distances.append(center_distance)
     return max(distances), sum(distances)
 
 
@@ -1641,18 +1682,39 @@ def _assign_island_triangles(island, triangles, tolerance):
     """Assign complete triangles to one fragmented CAD patch."""
     assigned = []
     for triangle in triangles:
+        vectors = [_tuple_vector(point) for point in triangle]
+        center = sum(vectors[1:], vectors[0]) * (1.0 / 3.0)
+        edge_scale = max(_panel_edge_lengths(triangle), default=0.0)
         ranked = []
         for patch in island.patches:
-            score = _triangle_patch_score(
-                triangle, patch, tolerance)
-            if score is not None:
-                ranked.append((score, patch))
+            if not patch.bbox.contains_point(
+                    center, max(tolerance * 10.0, edge_scale)):
+                continue
+            distance = _projected_patch_distance(
+                center, patch, tolerance)
+            if distance is not None:
+                ranked.append((distance, patch))
         if not ranked:
             return [], (
                 "a Netgen triangle could not be attributed to any complete "
                 "fragmented CAD face")
+        if len(ranked) == 1:
+            # A conforming mesh cannot cross this face boundary without a
+            # missing shared seam, which the island validator checks below.
+            # One valid projected centroid identifies this face directly.
+            assigned.append((ranked[0][1], triangle))
+            continue
         ranked.sort(key=lambda item: item[0])
-        assigned.append((ranked[0][1], triangle))
+        # Ambiguous centroids need vertex checks before choosing a patch.
+        for distance, patch in ranked:
+            if _triangle_patch_score(
+                    triangle, patch, tolerance, distance) is not None:
+                assigned.append((patch, triangle))
+                break
+        else:
+            return [], (
+                "a Netgen triangle could not be attributed to any complete "
+                "fragmented CAD face")
 
     # Edge flips may improve triangles inside one CAD face, but must never see
     # triangles from the other side of a material or topology boundary.

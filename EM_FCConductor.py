@@ -49,7 +49,7 @@ from EM_FCCommon import (getFCBaseFromSelection, getFCBaseObjects,
                          getFCBaseOwners, getFCObjectsFromSelection,
                          hasFCObjectReference, mergeFCBase, normalizeFCBase,
                          syncFCBaseVisibility)
-from EM_FCSolver import getFCSpacePermittivity
+from EM_FCSolver import getFCSolver, getFCSpacePermittivity
 
 if FreeCAD.GuiUp:
     import FreeCADGui
@@ -110,6 +110,9 @@ def makeFCConductor(base=None, defaultPermittivity=None,
             "new geometry to extend it.\n") % owner_names)
         return None
 
+    # A new FC object needs document-wide settings.  Create the default
+    # FCSolver in the same GUI transaction when none exists yet.
+    getFCSolver(FreeCAD.ActiveDocument, createIfNotExisting=True)
     obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
     _FCConductor(obj)

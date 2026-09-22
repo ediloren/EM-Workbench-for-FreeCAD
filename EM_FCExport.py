@@ -88,6 +88,39 @@ def _number(value):
     return "%.15g" % float(value)
 
 
+def _byte(value):
+    """Convert a normalized FreeCAD material component to one RGBA byte."""
+    return max(0, min(255, int(round(float(value) * 255.0))))
+
+
+def _fastercap_color(fc_object):
+    """Return FasterCap's 0xRRGGBBAA color for an FC object.
+
+    The standard Part Transparency property is an actual transparency in
+    percent (zero is opaque), whereas FasterCap's final hexadecimal byte is
+    alpha/opacity (ff is opaque). Shape Appearance may override both the
+    legacy ShapeColor and Transparency values, so follow the same precedence
+    as the transient FC panel preview.
+    """
+    view = getattr(fc_object, "ViewObject", None)
+    if view is None:
+        return "0xffffffff"
+    try:
+        color = tuple(view.ShapeColor)
+        transparency = max(0.0, min(1.0, float(view.Transparency) / 100.0))
+        appearances = list(view.ShapeAppearance)
+        if appearances:
+            material = appearances[0]
+            color = tuple(material.DiffuseColor)
+            transparency = max(0.0, min(1.0, float(material.Transparency)))
+        red, green, blue = (_byte(component) for component in color[:3])
+        alpha = _byte(1.0 - transparency)
+        return "0x%02x%02x%02x%02x" % (red, green, blue, alpha)
+    except (AttributeError, IndexError, TypeError, ValueError):
+        # A headless or older view provider need not expose Shape Appearance.
+        return "0xffffffff"
+
+
 def _point_fields(point, dimension, scale):
     count = 2 if dimension == "2D" else 3
     return [_number(point[index] * scale) for index in range(count)]
@@ -139,21 +172,26 @@ def _group_fastercap_dielectrics(panelization, entity):
     return [(key, groups[key]) for key in sorted(groups)]
 
 
-def _list_conductor_line(filename, permittivity, dimension, continuation):
+def _list_conductor_line(filename, permittivity, dimension, continuation,
+                         color=None):
     offsets = ["0", "0"] if dimension == "2D" else ["0", "0", "0"]
     fields = ["C", filename, _number(permittivity)] + offsets
     if continuation:
         fields.append("+")
+    if color is not None:
+        fields.append(color)
     return " ".join(fields)
 
 
 def _list_dielectric_line(filename, outer, inner, reference,
-                          reference_side, dimension, scale):
+                          reference_side, dimension, scale, color=None):
     offsets = ["0", "0"] if dimension == "2D" else ["0", "0", "0"]
     fields = ["D", filename, _number(outer), _number(inner)] + offsets
     fields.extend(_point_fields(reference, dimension, scale))
     if reference_side == "inner":
         fields.append("-")
+    if color is not None:
+        fields.append(color)
     return " ".join(fields)
 
 
@@ -206,6 +244,11 @@ def _build_export_files(panelization, list_filename):
             entity.fc_object.Name)
         solver_name = _safe_name(
             getattr(entity.fc_object, "Name", object_name), object_name)
+        # FasterCap stores an element display color on its C/D list record.
+        # FastCap does not define that optional extension, so retain its
+        # strictly portable output grammar.
+        color = (_fastercap_color(entity.fc_object)
+                 if target == "FasterCap" else None)
         if entity.kind == "FCConductor":
             groups = _group_conductor_panels(panelization, entity)
             for index, (permittivity, panels) in enumerate(groups):
@@ -216,7 +259,7 @@ def _build_export_files(panelization, list_filename):
                     solver_name, dimension, scale)
                 list_lines.append(_list_conductor_line(
                     filename, permittivity, dimension,
-                    index < len(groups) - 1))
+                    index < len(groups) - 1, color))
             continue
 
         if target == "FasterCap" and dimension == "3D":
@@ -236,7 +279,7 @@ def _build_export_files(panelization, list_filename):
                         object_name)
                 list_lines.append(_list_dielectric_line(
                     filename, outer, inner, reference, "outer",
-                    dimension, scale))
+                    dimension, scale, color))
         else:
             groups = [group for group in panelization.dielectric_groups
                       if group.entity is entity]
@@ -249,7 +292,7 @@ def _build_export_files(panelization, list_filename):
                 list_lines.append(_list_dielectric_line(
                     filename, group.outer_permittivity,
                     group.inner_permittivity, group.reference_point,
-                    group.reference_side, dimension, scale))
+                    group.reference_side, dimension, scale, color))
 
     files[os.path.basename(list_filename)] = (
         "\n".join(list_lines) + "\n")

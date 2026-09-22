@@ -365,15 +365,26 @@ class _ViewProviderFCSolver:
     def __init__(self, vobj):
         vobj.Proxy = self
         self.Object = vobj.Object
+        self._keepVisible(vobj)
 
     def attach(self, vobj):
         self.Object = vobj.Object
+        self._keepVisible(vobj)
+
+    def _keepVisible(self, vobj):
+        # This settings object has no 3D representation.  Hide the inherited
+        # visibility property and undo tree-shortcut toggles so its icon never
+        # appears disabled even though there is no geometry to display.
+        vobj.setEditorMode("Visibility", 2)
+        if not vobj.Visibility:
+            vobj.Visibility = True
 
     def updateData(self, fp, prop):
         return
 
     def onChanged(self, vp, prop):
-        return
+        if prop == "Visibility" and not vp.Visibility:
+            self._keepVisible(vp)
 
     def getIcon(self):
         return os.path.join(iconPath, 'EM_FCSolver.svg')
