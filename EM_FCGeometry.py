@@ -786,11 +786,12 @@ def _extract_sources(fc_object, diagnostics):
             _unique_identity(classifier_solids))
 
 
-# A conductor is one equipotential region even when its Base contains several
-# overlapping or face-touching solids. Normalize those volumes before boundary
-# extraction so the subsequent surface pipeline sees the same exterior that a
-# user-created Part Boolean union would expose. Disconnected solids remain
-# separate output solids, and zero-thickness Base faces/shells are retained.
+# A logical FC material object may contain several overlapping or face-touching
+# solid Bases. Normalize those volumes before boundary extraction so the
+# subsequent surface pipeline sees the same exterior that a user-created Part
+# Boolean union would expose. This is required for a conductor's equipotential
+# boundary and equally for one dielectric material region. Disconnected solids
+# remain separate output solids, and zero-thickness Base faces/shells remain.
 def _best_fused_face_source(face, solid_faces, tolerance):
     face_box = FCBoundingBox.from_shape(face)
     candidates = [
@@ -825,9 +826,9 @@ def _best_fused_face_source(face, solid_faces, tolerance):
     return best
 
 
-def _normalize_conductor_solid_union(raw_faces, classifier_solids,
-                                     tolerance, diagnostics, fc_object):
-    """Replace interacting conductor solids by their OCC Boolean-union boundary."""
+def _normalize_entity_solid_union(raw_faces, classifier_solids,
+                                  tolerance, diagnostics, fc_object, kind):
+    """Replace interacting solids of one FC material object by their union."""
     if len(classifier_solids) < 2:
         return raw_faces, classifier_solids
 
@@ -842,8 +843,8 @@ def _normalize_conductor_solid_union(raw_faces, classifier_solids,
             raise RuntimeError("OCC returned no valid union solids")
     except (AttributeError, RuntimeError, TypeError, ValueError) as error:
         diagnostics.append(_diagnostic(
-            FC_DIAGNOSTIC_WARNING, "conductor_union_failed",
-            "Could not normalize overlapping/touching conductor solids; "
+            FC_DIAGNOSTIC_WARNING, "%s_union_failed" % kind.lower(),
+            "Could not normalize overlapping/touching %s solids; " % kind +
             "continuing with their individual boundaries: %s" % error,
             fc_object))
         return raw_faces, classifier_solids
@@ -910,10 +911,10 @@ def _build_entity(fc_object, context):
     diagnostics = []
     source_references, raw_faces, classifier_solids = _extract_sources(
         fc_object, diagnostics)
-    if kind == "FCConductor":
-        raw_faces, classifier_solids = _normalize_conductor_solid_union(
+    if kind in ("FCConductor", "FCDielectric"):
+        raw_faces, classifier_solids = _normalize_entity_solid_union(
             raw_faces, classifier_solids,
-            context.geometry_tolerance, diagnostics, fc_object)
+            context.geometry_tolerance, diagnostics, fc_object, kind)
 
     if not raw_faces:
         diagnostics.append(_diagnostic(
