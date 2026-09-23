@@ -22,6 +22,7 @@
 # - Visibility combines object visibility, user switches, and cached-data state.
 # - Runtime scene nodes are reconstructed by attach and are never serialized.
 
+import math
 import FreeCAD
 
 if FreeCAD.GuiUp:
@@ -32,6 +33,10 @@ else:
 
 FCPREVIEW_BAD_COLOR = (1.0, 0.0, 0.0)
 FCPREVIEW_REFERENCE_COLOR = (0.9, 0.1, 0.9)
+
+# Reference arrows identify the resolved OUTPERM side without obscuring a dense
+# tessellation. Their count remains proportional to the panel count.
+FCPREVIEW_DIELECTRIC_REFERENCE_FRACTION = 0.20
 
 
 # Both construction and view attachment call this helper, so property creation
@@ -211,6 +216,42 @@ def _panel_center(panel):
                  for axis in range(3))
 
 
+def _panel_spatial_key(panel, bounds):
+    """Return a Morton key for the panel centre within the object bounds."""
+    center = _panel_center(panel)
+    coordinates = []
+    for axis in range(3):
+        minimum, maximum = bounds[axis]
+        span = maximum - minimum
+        normalized = 0.5 if span <= 1.0e-15 else (center[axis] - minimum) / span
+        coordinates.append(int(max(0.0, min(1.0, normalized)) * 1023.0))
+    key = 0
+    for bit in range(10):
+        for axis in range(3):
+            key |= ((coordinates[axis] >> bit) & 1) << (bit * 3 + axis)
+    return key
+
+
+def _reference_arrow_panels(panels):
+    """Choose an evenly distributed representative set of dielectric panels."""
+    eligible = [panel for panel in panels if panel.reference_point is not None]
+    if not eligible:
+        return []
+    centers = [_panel_center(panel) for panel in eligible]
+    minima = tuple(min(center[axis] for center in centers) for axis in range(3))
+    maxima = tuple(max(center[axis] for center in centers) for axis in range(3))
+    bounds = tuple(zip(minima, maxima))
+    # Use a panel-count-relative sample with no fixed ceiling. Morton order is
+    # a compact spatial ordering; equally spaced positions in it spread arrows
+    # across the surface without the quadratic cost of farthest-point sampling.
+    count = max(1, int(math.ceil(
+        len(eligible) * FCPREVIEW_DIELECTRIC_REFERENCE_FRACTION)))
+
+    ordered = sorted(
+        enumerate(eligible),
+        key=lambda item: (_panel_spatial_key(item[1], bounds), item[0]))
+    return [ordered[(2 * index + 1) * len(ordered) // (2 * count)][1]
+            for index in range(count)]
 # Reference arrows use the cached solver point and panel center so the preview
 # verifies the exact side choice that export will encode.
 def _set_references(state, panelization, fc_object):
@@ -231,9 +272,7 @@ def _set_references(state, panelization, fc_object):
         panelization.context.target_solver == "FasterCap" and
         panelization.context.dimension == "3D")
     if per_panel:
-        for panel in panelization.panels_for(fc_object):
-            if panel.reference_point is None:
-                continue
+        for panel in _reference_arrow_panels(panelization.panels_for(fc_object)):
             start = _panel_center(panel)
             points.extend((start, panel.reference_point))
             line_counts.append(2)

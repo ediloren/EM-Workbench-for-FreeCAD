@@ -284,6 +284,11 @@ def importFCInputFile(filename, viewText=False):
         return False
 
     if FreeCAD.GuiUp:
+        # The outer compound may contain shells with different alpha values,
+        # which cannot be represented by its one global Transparency property.
+        # Keep it opaque while the child shells retain their imported RGBA
+        # colors, including their individual transparency values.
+        result.ViewObject.Transparency = 0
         try:
             FreeCADGui.activeDocument().activeView().fitAll()
         except AttributeError:

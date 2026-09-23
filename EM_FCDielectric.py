@@ -385,6 +385,53 @@ class _ViewProviderFCDielectric:
             (max(bbox.ZMax for bbox in boxes) -
              min(bbox.ZMin for bbox in boxes)) ** 2)
 
+    def _faceArrowAnchor(self, face):
+        """Return a point and normal inside the trimmed face, if available."""
+        try:
+            umin, umax, vmin, vmax = face.ParameterRange
+            bbox = face.BoundBox
+            diagonal = math.sqrt(
+                bbox.XLength ** 2 + bbox.YLength ** 2 + bbox.ZLength ** 2)
+            tolerance = max(diagonal * 1.0e-10, 1.0e-9)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return None
+
+        # A parameter-space midpoint is on the underlying surface, but it can
+        # lie in a trimming hole. Test several inexpensive interior candidates
+        # against the actual face before accepting either its point or normal.
+        fractions = (0.5, 0.25, 0.75, 0.125, 0.875, 0.375, 0.625)
+        for fraction_u in fractions:
+            for fraction_v in fractions:
+                try:
+                    u = umin + (umax - umin) * fraction_u
+                    v = vmin + (vmax - vmin) * fraction_v
+                    anchor = face.valueAt(u, v)
+                    if face.isInside(anchor, tolerance, True):
+                        return anchor, face.normalAt(u, v)
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    continue
+
+        # An unusual trim can exclude every regular sample. A triangle emitted
+        # by OCC's display tessellation has an interior centroid, which gives a
+        # robust final candidate without creating persistent mesh geometry.
+        try:
+            vertices, facets = face.tessellate(max(diagonal * 0.05, 1.0e-6))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return None
+        for facet in facets:
+            if len(facet) != 3:
+                continue
+            try:
+                first, second, third = (vertices[index] for index in facet)
+                candidate = (first + second + third) * (1.0 / 3.0)
+                u, v = face.Surface.parameter(candidate)
+                anchor = face.valueAt(u, v)
+                if face.isInside(anchor, tolerance, True):
+                    return anchor, face.normalAt(u, v)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                continue
+        return None
+
     def _rebuildArrows(self):
         if not hasattr(self, "arrowCoordinates"):
             return
@@ -404,17 +451,17 @@ class _ViewProviderFCDielectric:
         # normalizes connected faces before applying this overall direction.
         for face in self._sampleFaces(faces):
             try:
-                umin, umax, vmin, vmax = face.ParameterRange
-                normal = face.normalAt(
-                    (umin + umax) * 0.5, (vmin + vmax) * 0.5)
+                anchor_normal = self._faceArrowAnchor(face)
+                if anchor_normal is None:
+                    continue
+                anchor, normal = anchor_normal
                 if normal.Length <= 1e-12:
                     continue
                 normal.normalize()
                 if reverse:
                     normal = FreeCAD.Vector(-normal.x, -normal.y, -normal.z)
-                center = face.CenterOfMass
-                start = center + normal * (length * 0.05)
-                tip = center + normal * length
+                start = anchor
+                tip = anchor + normal * length
                 side = normal.cross(FreeCAD.Vector(0.0, 0.0, 1.0))
                 if side.Length <= 1e-9:
                     side = normal.cross(FreeCAD.Vector(1.0, 0.0, 0.0))
