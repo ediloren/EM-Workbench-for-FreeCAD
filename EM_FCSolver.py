@@ -198,6 +198,8 @@ class _FCSolver:
         self._syncReferenceEditor(obj)
 
     def _ensureProperties(self, obj):
+        from EM_FCDefeaturing import ensureDefeaturingProperties
+        ensureDefeaturingProperties(obj, solver=True)
         if "Dimension" not in obj.PropertiesList:
             obj.addProperty(
                 "App::PropertyEnumeration", "Dimension", "EM",

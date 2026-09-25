@@ -106,6 +106,7 @@ class FCSurfacePatch:
     surrounding_permittivity: Optional[float] = None
     removed: bool = False
     problem_codes: List[str] = field(default_factory=list)
+    attribution_shape: Any = None
 
 
 @dataclass
@@ -164,6 +165,7 @@ class FCPanelization:
     diagnostics: List[FCDiagnostic]
     signature: Tuple[Any, ...]
     created_at: float = field(default_factory=time.time)
+    elapsed_seconds: float = 0.0
 
     @property
     def has_errors(self):
@@ -284,6 +286,7 @@ def _unique_shapes(shapes):
 
 
 def _source_signature(fc_object):
+    from EM_FCDefeaturing import defeaturingSignature
     base_items = []
     try:
         from EM_FCCommon import normalizeFCBase, _fc_subshape
@@ -309,13 +312,15 @@ def _source_signature(fc_object):
         getattr(fc_object, "PanelCurvatureTolerance",
                 FCPANEL_DEF_CURVATURE_TOLERANCE)]
     return (getattr(fc_object, "Name", id(fc_object)),
-            _type_of(fc_object), tuple(base_items), tuple(values))
+            _type_of(fc_object), tuple(base_items), tuple(values),
+            defeaturingSignature(fc_object))
 
 
 # The cache signature combines solver settings, object material controls, and
 # source shape identities so presentation-only changes do not invalidate it.
 def getFCPanelizationSignature(document, solver=None):
     """Return a cheap signature used to reject stale previews and exports."""
+    from EM_FCDefeaturing import defeaturingSignature
     if solver is None:
         solvers = [obj for obj in getattr(document, "Objects", [])
                    if _type_of(obj) == "FCSolver"]
@@ -328,7 +333,8 @@ def getFCPanelizationSignature(document, solver=None):
         float(getattr(solver, "SpacePermittivity", 0.0)),
         float(getattr(solver, "GeometryTolerance", 0.0)),
         float(getattr(solver, "MaxPanelSize", 0.0)),
-        getattr(getattr(solver, "ReferenceConductor", None), "Name", None))
+        getattr(getattr(solver, "ReferenceConductor", None), "Name", None),
+        defeaturingSignature(solver))
     objects = tuple(_source_signature(obj)
                     for obj in getattr(document, "Objects", [])
                     if _type_of(obj) in FC_ENTITY_TYPES)
@@ -1195,7 +1201,9 @@ def _fragment_face_record(source, face, index):
         inner_permittivity=source.inner_permittivity,
         outer_permittivity=source.outer_permittivity,
         surrounding_permittivity=source.surrounding_permittivity,
-        problem_codes=list(source.problem_codes))
+        problem_codes=list(source.problem_codes),
+        attribution_shape=(source.attribution_shape
+                           if source.attribution_shape is not None else source.shape))
     result.center, result.normal = _face_center_normal(aligned)
     return result
 
@@ -1230,6 +1238,10 @@ def _group_needs_fragmentation(group, tolerance):
 def _fragment_patch_group(group, tolerance, diagnostics):
     if len(group) < 2 or not _group_needs_fragmentation(group, tolerance):
         return list(group)
+
+    # Only interacting groups need this OCC workaround. An isolated sphere
+    # or an already conformal shell keeps its original meshing topology.
+    group = _split_periodic_mesh_patches(group, tolerance)
 
     try:
         _result, history = group[0].shape.generalFuse(
@@ -1325,6 +1337,55 @@ def _patch_bbox_union(patches):
     for patch in patches[1:]:
         bbox = bbox.union(patch.bbox)
     return bbox
+
+
+def _split_periodic_mesh_patches(patches, tolerance):
+    """Avoid ambiguous greater-than-half-period faces in OCC General Fuse.
+
+    A trimmed spherical face spanning 270 degrees can be replaced by its
+    90-degree complement during General Fuse. Split large periodic spans on
+    exact isoparametric curves first, retaining area and material ownership.
+    This adds seams, not geometry approximations. Both periodic directions
+    are considered (e.g. a torus); failed splits keep the original patch so
+    the existing completeness checks still report failures honestly.
+    """
+    result = []
+    for patch in patches:
+        faces = [patch.shape]
+        for axis in (0, 1):
+            split_faces = []
+            for face in faces:
+                surface = face.Surface
+                try:
+                    periodic = surface.isUPeriodic() if axis == 0 else surface.isVPeriodic()
+                    limits = face.ParameterRange
+                    start, end = limits[axis*2:axis*2+2]
+                    if not periodic:
+                        split_faces.append(face)
+                        continue
+                    period = surface.UPeriod() if axis == 0 else surface.VPeriod()
+                    if end-start <= period*0.5 + 1e-9:
+                        split_faces.append(face)
+                        continue
+                    curve = surface.uIso((start+end)*0.5) if axis == 0 else surface.vIso((start+end)*0.5)
+                    bounds = limits[2:4] if axis == 0 else limits[0:2]
+                    pieces, error = _split_face_once(face, [curve.toShape(*bounds)], tolerance)
+                    if (error is not None or len(pieces) < 2 or
+                            abs(sum(f.Area for f in pieces)-face.Area) >
+                            max(tolerance*tolerance, face.Area*1e-7)):
+                        pieces = [face]
+                    split_faces.extend(pieces)
+                except (AttributeError, RuntimeError, ValueError, TypeError):
+                    split_faces.append(face)
+            faces = split_faces
+        if len(faces) == 1:
+            result.append(patch)
+        else:
+            for face in faces:
+                fragment = _fragment_face_record(patch, face, len(result))
+                fragment.attribution_shape = face
+                result.append(fragment)
+    return result
 
 
 def _prepare_meshing_islands(patches, tolerance, diagnostics):
@@ -1657,6 +1718,21 @@ def _segments_per_radius(relative_deviation):
 # Netgen having placed them on that edge. Allow a few float32 ulps as well as
 # the model tolerance. A triangle centroid lies on the planar chord, so it
 # must still be projected to the curved support surface.
+def _near_mesh_face_rim(point, face, tolerance):
+    """Allow float32-rounded mesh nodes on a trimmed CAD boundary."""
+    vertex = Part.Vertex(point)
+    for boundary in face.Edges:
+        bbox = boundary.BoundBox
+        if not (
+                bbox.XMin - tolerance <= point.x <= bbox.XMax + tolerance and
+                bbox.YMin - tolerance <= point.y <= bbox.YMax + tolerance and
+                bbox.ZMin - tolerance <= point.z <= bbox.ZMax + tolerance):
+            continue
+        if float(vertex.distToShape(boundary)[0]) <= tolerance:
+            return True
+    return False
+
+
 def _projected_patch_distance(point, patch, tolerance):
     try:
         u, v = patch.shape.Surface.parameter(point)
@@ -1664,23 +1740,24 @@ def _projected_patch_distance(point, patch, tolerance):
         coordinate_scale = max(abs(point.x), abs(point.y), abs(point.z))
         mesh_tolerance = max(
             tolerance * 10.0, coordinate_scale * 8.0 * 2.0 ** -23)
+        # OCC General Fuse can preserve a periodic fragment's area and edges
+        # yet leave isInside() accepting the complementary UV region as well.
+        # The pre-fragmentation trim is an additional necessary containment
+        # condition, preventing ownership (and permittivity) from leaking
+        # across a periodic seam. The final trim is still checked below.
+        if (patch.attribution_shape is not None and
+                not patch.attribution_shape.isInside(
+                    projected, mesh_tolerance, True) and
+                not _near_mesh_face_rim(
+                    point, patch.attribution_shape, mesh_tolerance)):
+            return None
         if not patch.shape.isInside(
                 projected, mesh_tolerance, True):
             # A rounded vertex can be on the actual CAD rim even when its
             # nearest support-surface projection falls outside the trim.
             # Limit exact point-to-edge checks to nearby edge bounding boxes.
-            vertex = Part.Vertex(point)
-            for boundary in patch.shape.Edges:
-                bbox = boundary.BoundBox
-                if not (
-                        bbox.XMin - mesh_tolerance <= point.x <= bbox.XMax + mesh_tolerance and
-                        bbox.YMin - mesh_tolerance <= point.y <= bbox.YMax + mesh_tolerance and
-                        bbox.ZMin - mesh_tolerance <= point.z <= bbox.ZMax + mesh_tolerance):
-                    continue
-                distance = float(vertex.distToShape(boundary)[0])
-                if distance <= mesh_tolerance:
-                    return distance
-            return None
+            if not _near_mesh_face_rim(point, patch.shape, mesh_tolerance):
+                return None
         return _distance(point, projected)
     except (AttributeError, RuntimeError, TypeError, ValueError):
         return None
@@ -1704,6 +1781,13 @@ def _triangle_patch_score(triangle, patch, tolerance, center_distance=None):
     if any(distance is None for distance in distances):
         return None
     distances.append(center_distance)
+    if isinstance(patch.shape.Surface, Part.Plane):
+        # Unlike curved chords, planar facets must actually lie on their
+        # support plane. Never fall back to a nearby parallel/orthogonal face
+        # merely because its projected points fit inside the trim.
+        rounding = max(abs(value) for point in triangle for value in point) * 8.0 * 2.0**-23
+        if max(distances) > max(tolerance*10.0, rounding):
+            return None
     return max(distances), sum(distances)
 
 
@@ -1906,6 +1990,12 @@ def _cad_edge_groups(patches):
 
 def _point_on_edge_shape(point, edge_shape, tolerance):
     try:
+        # MeshPart stores nodes as float32, whereas OCC curves use doubles.
+        # Account only for the node's representational rounding (IEEE single
+        # precision unit roundoff), not a larger geometric sewing tolerance.
+        # Exact mesh-node connectivity is still checked separately above.
+        rounding = math.sqrt(sum(float(value)**2 for value in point)) * 2.0**-24
+        tolerance = max(tolerance, rounding * (1.0 + 2.0**-23))
         return float(Part.Vertex(
             _tuple_vector(point)).distToShape(edge_shape)[0]) <= tolerance
     except (AttributeError, RuntimeError, TypeError, ValueError):
@@ -2530,16 +2620,25 @@ def _make_panels(model, patches, diagnostics, meshing_islands=None):
 # only after a coherent FCPanelization object has been assembled.
 def createFCPanelization(document=None, solver=None, progress=None):
     """Run the expensive Phase 3 pipeline and install transient previews."""
+    started = time.perf_counter()
+    from EM_FCGeometry import buildFCSolverContext
+    from EM_FCDefeaturing import (prepareDefeaturingSources,
+                                  diagnoseDefeaturingPatches)
     if document is None:
         document = getattr(solver, "Document", None) or FreeCAD.ActiveDocument
     _progress_checkpoint(progress, "Preparing panelization")
     clearFCPanelization(document)
+    context = buildFCSolverContext(document, solver)
+    objects = [obj for obj in document.Objects if _type_of(obj) in FC_ENTITY_TYPES]
+    prepared, preparation_diagnostics = prepareDefeaturingSources(
+        objects, context.solver, context.geometry_tolerance,
+        lambda phase: _progress_checkpoint(progress, phase))
     _progress_checkpoint(progress, "Extracting FC geometry")
-    geometry = extractFCGeometry(document, solver)
+    geometry = extractFCGeometry(document, solver, prepared_sources=prepared)
     if not geometry.entities:
         raise FCPanelizationError(
             "No FCConductor or FCDielectric objects were found")
-    diagnostics = list(geometry.diagnostics)
+    diagnostics = list(preparation_diagnostics) + list(geometry.diagnostics)
     if not any(entity.kind == "FCConductor"
                for entity in geometry.entities):
         diagnostics.append(FCDiagnostic(
@@ -2556,6 +2655,8 @@ def createFCPanelization(document=None, solver=None, progress=None):
     diagnostics.extend(split_diagnostics)
     _progress_checkpoint(progress, "Assigning material interfaces")
     diagnostics.extend(_resolve_patch_semantics(geometry, patches))
+    diagnostics.extend(diagnoseDefeaturingPatches(
+        patches, context.solver, context.geometry_tolerance))
     _progress_checkpoint(progress, "Resolving coplanar surfaces")
     diagnostics.extend(_merge_redundant_coplanar_patches(
         patches, set(splitters), geometry.context.geometry_tolerance))
@@ -2614,4 +2715,5 @@ def createFCPanelization(document=None, solver=None, progress=None):
             # Never hide the only usable geometry when this object's
             # panelization failed to produce any displayable panels.
             syncFCBaseVisibility(obj)
+    result.elapsed_seconds = time.perf_counter() - started
     return result

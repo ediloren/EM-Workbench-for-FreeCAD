@@ -25,6 +25,7 @@
 import os
 import re
 import tempfile
+import time
 
 import FreeCAD
 
@@ -431,9 +432,10 @@ class _CommandFCPanelize:
         # The computational pipeline remains Qt-independent. This dialog only
         # receives notifications at its safe phase boundaries, where it pumps
         # events and can request a clean cancellation.
+        started = time.perf_counter()
         dialog = QtWidgets.QProgressDialog(
             translate("EM", "Preparing panelization"),
-            translate("EM", "Cancel"), 0, 10,
+            translate("EM", "Cancel"), 0, 12,
             FreeCADGui.getMainWindow())
         dialog.setWindowTitle(translate(
             "EM", "FasterCap/FastCap panelization"))
@@ -443,9 +445,12 @@ class _CommandFCPanelize:
         dialog.setAutoReset(False)
         dialog.show()
         progress_step = [0]
+        previous_phase = [None]
 
         def progress(phase):
-            progress_step[0] = min(progress_step[0] + 1, dialog.maximum())
+            if phase != previous_phase[0]:
+                progress_step[0] = min(progress_step[0] + 1, dialog.maximum())
+                previous_phase[0] = phase
             dialog.setLabelText(translate("EM", phase))
             dialog.setValue(progress_step[0])
             application = QtWidgets.QApplication.instance()
@@ -459,12 +464,13 @@ class _CommandFCPanelize:
                 FreeCAD.ActiveDocument, progress=progress)
         except FCPanelizationCancelled:
             FreeCAD.Console.PrintMessage(translate(
-                "EM", "FasterCap/FastCap panelization cancelled.\n"))
+                "EM", "FasterCap/FastCap panelization cancelled after %.2f s.\n")
+                % (time.perf_counter() - started))
             return
         except Exception as error:
             FreeCAD.Console.PrintError(
-                translate("EM", "FasterCap/FastCap panelization failed: %s\n")
-                % error)
+                translate("EM", "FasterCap/FastCap panelization failed after %.2f s: %s\n")
+                % (time.perf_counter() - started, error))
             return
         finally:
             dialog.close()
@@ -475,8 +481,9 @@ class _CommandFCPanelize:
                        for item in panelization.diagnostics)
         FreeCAD.Console.PrintMessage(translate(
             "EM",
-            "FasterCap/FastCap panelization created: %d panels, %d errors, %d warnings.\n")
-            % (len(panelization.panels), errors, warnings))
+            "FasterCap/FastCap panelization created: %d panels, %d errors, %d warnings, %.2f s total.\n")
+            % (len(panelization.panels), errors, warnings,
+               panelization.elapsed_seconds))
 
 
 # Overwrite consent applies to the whole generated set, not just its list file.

@@ -744,7 +744,7 @@ def _component_global_flip(raw_faces, indices, local_flips, tolerance):
 
 # Resolve LinkSub entries at panelization time so the transient model reflects
 # the current parametric state of every linked source object.
-def _extract_sources(fc_object, diagnostics):
+def _extract_sources(fc_object, diagnostics, prepared_sources=None):
     source_references = []
     raw_faces = []
     classifier_solids = []
@@ -752,7 +752,12 @@ def _extract_sources(fc_object, diagnostics):
             getattr(fc_object, "Base", [])):
         for subelement in subelements:
             try:
-                shape = _fc_subshape(source_object, subelement)
+                if prepared_sources is None:
+                    shape = _fc_subshape(source_object, subelement)
+                else:
+                    shape = next(shape for source, subname, shape in
+                                 prepared_sources[fc_object.Name]
+                                 if source is source_object and subname == subelement)
             except (AttributeError, RuntimeError, ValueError) as error:
                 shape = None
                 diagnostics.append(FCDiagnostic(
@@ -906,11 +911,11 @@ def _normalize_entity_solid_union(raw_faces, classifier_solids,
 
 # Assemble one logical conductor or dielectric: extract, deduplicate, connect,
 # orient, bound, and index its faces while retaining classifier solids.
-def _build_entity(fc_object, context):
+def _build_entity(fc_object, context, prepared_sources=None):
     kind = _fc_type(fc_object)
     diagnostics = []
     source_references, raw_faces, classifier_solids = _extract_sources(
-        fc_object, diagnostics)
+        fc_object, diagnostics, prepared_sources)
     if kind in ("FCConductor", "FCDielectric"):
         raw_faces, classifier_solids = _normalize_entity_solid_union(
             raw_faces, classifier_solids,
@@ -1081,7 +1086,8 @@ def _build_entity(fc_object, context):
 
 # Public extraction performs no Boolean splitting.  It returns oriented source
 # geometry plus candidate indexes for the panelization stage.
-def extractFCGeometry(document=None, solver=None, objects=None):
+def extractFCGeometry(document=None, solver=None, objects=None,
+                      prepared_sources=None):
     """Extract a complete transient Phase 2 geometry model.
 
     No intersections, splitting, cleanup, tessellation, panelization, export,
@@ -1106,7 +1112,7 @@ def extractFCGeometry(document=None, solver=None, objects=None):
                 "Ignoring an object that is not FCConductor or FCDielectric",
                 fc_object))
             continue
-        entity = _build_entity(fc_object, context)
+        entity = _build_entity(fc_object, context, prepared_sources)
         entities.append(entity)
         diagnostics.extend(entity.diagnostics)
 

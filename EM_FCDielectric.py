@@ -184,6 +184,8 @@ class _FCDielectric:
         obj.Proxy = self
 
     def _ensureProperties(self, obj):
+        from EM_FCDefeaturing import ensureDefeaturingProperties
+        ensureDefeaturingProperties(obj)
         if "Base" not in obj.PropertiesList:
             obj.addProperty(
                 "App::PropertyLinkSubList", "Base", "EM",
@@ -267,6 +269,9 @@ class _FCDielectric:
     def onChanged(self, obj, prop):
         if not hasattr(self, "Object"):
             self.Object = obj
+        if prop == "Defeaturing":
+            from EM_FCDefeaturing import syncDefeaturingEditor
+            syncDefeaturingEditor(obj)
         if prop == "Base":
             self._removeNestedBase(obj)
             if FreeCAD.GuiUp and not getattr(obj, "Panelized", False):
