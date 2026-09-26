@@ -259,6 +259,9 @@ class _FCConductor:
     def onChanged(self, obj, prop):
         if not hasattr(self, "Object"):
             self.Object = obj
+        if prop in ("DefeaturingRelativeSize", "DefeaturingRelativeDeviation"):
+            from EM_FCDefeaturing import normalizeRelativeValue
+            normalizeRelativeValue(obj, prop)
         if prop == "Defeaturing":
             from EM_FCDefeaturing import syncDefeaturingEditor
             syncDefeaturingEditor(obj)

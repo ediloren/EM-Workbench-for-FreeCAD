@@ -310,6 +310,9 @@ class _FCSolver:
     def onChanged(self, obj, prop):
         if not hasattr(self, "Object"):
             self.Object = obj
+        if prop in ("DefeaturingRelativeSize", "DefeaturingRelativeDeviation"):
+            from EM_FCDefeaturing import normalizeRelativeValue
+            normalizeRelativeValue(obj, prop)
         if prop == "Dimension":
             self._syncReferenceEditor(obj)
         elif (prop == "ReferenceConductor" and

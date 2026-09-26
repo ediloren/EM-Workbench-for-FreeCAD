@@ -269,6 +269,9 @@ class _FCDielectric:
     def onChanged(self, obj, prop):
         if not hasattr(self, "Object"):
             self.Object = obj
+        if prop in ("DefeaturingRelativeSize", "DefeaturingRelativeDeviation"):
+            from EM_FCDefeaturing import normalizeRelativeValue
+            normalizeRelativeValue(obj, prop)
         if prop == "Defeaturing":
             from EM_FCDefeaturing import syncDefeaturingEditor
             syncDefeaturingEditor(obj)
@@ -493,11 +496,24 @@ class _ViewProviderFCDielectric:
 
     def _showArrows(self, show):
         if hasattr(self, "arrowSwitch"):
-            show = bool(
-                show and self.VObject.Visibility and
-                not getattr(self.Object, "Panelized", False))
-            self.arrowSwitch.whichChild = (
-                coin.SO_SWITCH_ALL if show else coin.SO_SWITCH_NONE)
+            try:
+                show = bool(
+                    show and self.VObject is not None and
+                    self.VObject.Visibility and self.Object is not None and
+                    not getattr(self.Object, "Panelized", False))
+                self.arrowSwitch.whichChild = (
+                    coin.SO_SWITCH_ALL if show else coin.SO_SWITCH_NONE)
+            except (AttributeError, ReferenceError, RuntimeError):
+                self.arrowSwitch.whichChild = coin.SO_SWITCH_NONE
+
+    def _selectionIdentity(self):
+        """Return stable observer names, or None after object destruction."""
+        try:
+            if self.Object is None or self.Object.Document is None:
+                return None
+            return self.Object.Document.Name, self.Object.Name
+        except (AttributeError, ReferenceError, RuntimeError):
+            return None
 
     def _syncSelection(self):
         try:
@@ -506,29 +522,31 @@ class _ViewProviderFCDielectric:
             selected = self.Object in selected
             self._showArrows(selected)
             setFCPanelPreviewSelected(self, selected)
-        except (AttributeError, RuntimeError):
+        except (AttributeError, ReferenceError, RuntimeError):
             self._showArrows(False)
             setFCPanelPreviewSelected(self, False)
 
     # FreeCAD selection-observer callbacks keep arrows visible only while the
     # logical dielectric object is selected.
     def addSelection(self, document, obj, subelement, position):
-        if (document == self.Object.Document.Name and
-                obj == self.Object.Name):
+        identity = self._selectionIdentity()
+        if identity is not None and (document, obj) == identity:
             self._showArrows(True)
             setFCPanelPreviewSelected(self, True)
 
     def removeSelection(self, document, obj, subelement):
-        if (document == self.Object.Document.Name and
-                obj == self.Object.Name):
+        identity = self._selectionIdentity()
+        if identity is not None and (document, obj) == identity:
             self._syncSelection()
 
     def setSelection(self, document):
-        if document == self.Object.Document.Name:
+        identity = self._selectionIdentity()
+        if identity is not None and document == identity[0]:
             self._syncSelection()
 
     def clearSelection(self, document):
-        if not document or document == self.Object.Document.Name:
+        identity = self._selectionIdentity()
+        if identity is None or not document or document == identity[0]:
             self._showArrows(False)
             setFCPanelPreviewSelected(self, False)
 
@@ -563,7 +581,11 @@ class _ViewProviderFCDielectric:
         onFCPanelPreviewChanged(self, prop)
 
     def claimChildren(self):
-        return getFCBaseObjects(self.Object.Base) if hasattr(self, "Object") else []
+        try:
+            return (getFCBaseObjects(self.Object.Base)
+                    if getattr(self, "Object", None) is not None else [])
+        except (AttributeError, ReferenceError, RuntimeError):
+            return []
 
     def getDefaultDisplayMode(self):
         return "Flat Lines"
@@ -573,8 +595,15 @@ class _ViewProviderFCDielectric:
 
     def onDelete(self, vobj, subelements):
         if getattr(self, "_observerRegistered", False):
-            FreeCADGui.Selection.removeObserver(self)
+            try:
+                FreeCADGui.Selection.removeObserver(self)
+            except (AttributeError, ReferenceError, RuntimeError):
+                pass
             self._observerRegistered = False
+        # Selection notifications may already be queued. Clearing these
+        # wrappers makes late callbacks take the deletion-safe no-op paths.
+        self.Object = None
+        self.VObject = None
         return True
 
     def __getstate__(self):

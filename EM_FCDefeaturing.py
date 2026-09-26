@@ -11,6 +11,7 @@ or ambiguous features are retained and diagnosed, never deleted from a mesh.
 """
 
 from dataclasses import dataclass
+import math
 
 import FreeCAD
 import Part
@@ -18,12 +19,21 @@ import Part
 
 DEFAULT_RELATIVE_SIZE = 0.002
 DEFAULT_RELATIVE_DEVIATION = 0.002
+MIN_RELATIVE_VALUE = 1.0e-8
+MAX_RELATIVE_VALUE = 0.1
 POLICIES = ["Align contacts", "Align and regularize"]
 MODES = ["Inherit", "Disabled", "Custom"]
 
 
 def ensureDefeaturingProperties(obj, solver=False):
-    """Install identical controls on the solver and optional object overrides."""
+    """Install defeaturing controls without changing global GUI precision.
+
+    FreeCAD's PropertyFloatConstraint editor always formats values with the
+    application's global Units/Decimals preference.  Relative defeaturing
+    values are usually below 0.01, so use two local string properties instead:
+    their complete decimal text stays visible in the Property editor.  Values
+    are parsed and range-checked before the panelizer consumes them.
+    """
     definitions = []
     if solver:
         definitions.append(("App::PropertyBool", "DefeaturingEnabled",
@@ -35,12 +45,12 @@ def ensureDefeaturingProperties(obj, solver=False):
             ("App::PropertyInteger", "DefeaturingPriority",
              "Higher priority is the alignment reference; disabled objects are always fixed", 0)])
     definitions.extend([
-        ("App::PropertyFloatConstraint", "DefeaturingRelativeSize",
-         "Candidate feature size / original connected Base component bounding-box diagonal",
-         (DEFAULT_RELATIVE_SIZE, 1e-8, 0.1, 0.001)),
-        ("App::PropertyFloatConstraint", "DefeaturingRelativeDeviation",
-         "Allowed analysis-boundary movement / original component diagonal; face-removal bound is sampled",
-         (DEFAULT_RELATIVE_DEVIATION, 0.0, 0.1, 0.001)),
+        ("App::PropertyString", "DefeaturingRelativeSize",
+         "Candidate feature size / original connected Base component bounding-box diagonal. Enter a decimal between 1e-8 and 0.1; displayed text retains its precision.",
+         _relative_text(DEFAULT_RELATIVE_SIZE)),
+        ("App::PropertyString", "DefeaturingRelativeDeviation",
+         "Allowed analysis-boundary movement / original component diagonal; face-removal bound is sampled. Enter a decimal between 0 and 0.1; displayed text retains its precision.",
+         _relative_text(DEFAULT_RELATIVE_DEVIATION)),
         ("App::PropertyEnumeration", "DefeaturingPolicy",
          "Align near planar contacts; optionally regularize curved tangencies by bounded solid contraction", POLICIES)])
     for kind, name, description, default in definitions:
@@ -51,6 +61,33 @@ def ensureDefeaturingProperties(obj, solver=False):
                 obj.DefeaturingPolicy = "Align and regularize"
     if not solver:
         syncDefeaturingEditor(obj)
+
+
+def _relative_text(value):
+    """Stable, readable decimal text for the per-object property editor."""
+    return format(float(value), ".12g")
+
+
+def relativeValue(obj, name, default, minimum=MIN_RELATIVE_VALUE):
+    """Read a local precision-preserving value and reject invalid text early."""
+    try:
+        value = float(str(getattr(obj, name)))
+    except (TypeError, ValueError):
+        value = default
+    if not math.isfinite(value):
+        value = default
+    return min(MAX_RELATIVE_VALUE, max(minimum, value))
+
+
+def normalizeRelativeValue(obj, name):
+    """Canonicalize direct Property-editor edits without changing preferences."""
+    default = (DEFAULT_RELATIVE_SIZE if name == "DefeaturingRelativeSize"
+               else DEFAULT_RELATIVE_DEVIATION)
+    minimum = MIN_RELATIVE_VALUE if name == "DefeaturingRelativeSize" else 0.0
+    value = relativeValue(obj, name, default, minimum)
+    text = _relative_text(value)
+    if getattr(obj, name) != text:
+        obj.__setattr__(name, text)
 
 
 def syncDefeaturingEditor(obj):
@@ -83,8 +120,9 @@ def settingsFor(obj, solver):
     return Settings(
         mode == "Custom" or (mode != "Disabled" and
                              bool(getattr(solver, "DefeaturingEnabled", False))),
-        float(getattr(source, "DefeaturingRelativeSize", DEFAULT_RELATIVE_SIZE)),
-        float(getattr(source, "DefeaturingRelativeDeviation", DEFAULT_RELATIVE_DEVIATION)),
+        relativeValue(source, "DefeaturingRelativeSize", DEFAULT_RELATIVE_SIZE),
+        relativeValue(source, "DefeaturingRelativeDeviation",
+                      DEFAULT_RELATIVE_DEVIATION, 0.0),
         str(getattr(source, "DefeaturingPolicy", POLICIES[-1])),
         int(getattr(obj, "DefeaturingPriority", 0)))
 

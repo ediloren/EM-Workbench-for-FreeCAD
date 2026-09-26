@@ -18,7 +18,8 @@
 # - Valid and problematic panels occupy separate branches for independent color.
 # - Each object shares coordinate and index arrays instead of creating a Coin
 #   node or persistent FreeCAD object per panel.
-# - Dielectric markers show the exact reference points later used by export.
+# - Dielectric arrows derive their direction from the exact reference points
+#   used by export, while their display length follows the normal arrow scale.
 # - Visibility combines object visibility, user switches, and cached-data state.
 # - Runtime scene nodes are reconstructed by attach and are never serialized.
 
@@ -32,7 +33,7 @@ else:
 
 
 FCPREVIEW_BAD_COLOR = (1.0, 0.0, 0.0)
-FCPREVIEW_REFERENCE_COLOR = (0.9, 0.1, 0.9)
+FCPREVIEW_DIELECTRIC_ARROW_COLOR = (1.0, 0.2, 0.1)
 
 # Reference arrows identify the resolved OUTPERM side without obscuring a dense
 # tessellation. Their count remains proportional to the panel count.
@@ -56,13 +57,8 @@ def ensureFCPreviewProperties(vobj, dielectric=False):
     if dielectric and "ShowReferencePoints" not in vobj.PropertiesList:
         vobj.addProperty(
             "App::PropertyBool", "ShowReferencePoints", "Panelization",
-            "Show actual generated dielectric reference points and arrows")
+            "Show sampled OUTPERM direction arrows on the panelization")
         vobj.ShowReferencePoints = True
-    if dielectric and "ReferencePointColor" not in vobj.PropertiesList:
-        vobj.addProperty(
-            "App::PropertyColor", "ReferencePointColor", "Panelization",
-            "Color of dielectric reference-point preview aids")
-        vobj.ReferencePointColor = FCPREVIEW_REFERENCE_COLOR
 
 
 def _material(color, transparency=0.15):
@@ -137,24 +133,21 @@ def attachFCPanelPreview(view_provider, vobj, dielectric=False):
 
     references_switch = None
     reference_coordinates = None
-    reference_points = None
     reference_lines = None
     reference_material = None
     if dielectric:
         references_switch = coin.SoSwitch()
         separator = coin.SoSeparator()
         reference_material = _material(
-            tuple(vobj.ReferencePointColor), 0.0)
+            tuple(getattr(vobj, "ArrowColor",
+                          FCPREVIEW_DIELECTRIC_ARROW_COLOR)), 0.0)
         style = coin.SoDrawStyle()
-        style.pointSize = 7.0
         style.lineWidth = 2.0
         reference_coordinates = coin.SoCoordinate3()
-        reference_points = coin.SoPointSet()
         reference_lines = coin.SoLineSet()
         separator.addChild(reference_material)
         separator.addChild(style)
         separator.addChild(reference_coordinates)
-        separator.addChild(reference_points)
         separator.addChild(reference_lines)
         references_switch.addChild(separator)
         references_switch.whichChild = coin.SO_SWITCH_NONE
@@ -164,10 +157,10 @@ def attachFCPanelPreview(view_provider, vobj, dielectric=False):
         "switch": panel_switch, "good": good, "bad": bad,
         "references_switch": references_switch,
         "reference_coordinates": reference_coordinates,
-        "reference_points": reference_points,
         "reference_lines": reference_lines,
         "reference_material": reference_material,
-        "has_data": False, "dielectric": dielectric, "selected": False}
+        "panelization": None, "has_data": False,
+        "dielectric": dielectric, "selected": False}
 
 
 def _set_color(material, color):
@@ -252,41 +245,61 @@ def _reference_arrow_panels(panels):
         key=lambda item: (_panel_spatial_key(item[1], bounds), item[0]))
     return [ordered[(2 * index + 1) * len(ordered) // (2 * count)][1]
             for index in range(count)]
-# Reference arrows use the cached solver point and panel center so the preview
-# verifies the exact side choice that export will encode.
+# Reference arrows use the direction from panel center to the cached solver
+# point, so the preview verifies the exact OUTPERM side that export encodes.
+# Their fixed object-relative display length matches the arrows shown on live
+# Base faces and avoids tiny dots/segments when solver reference points are
+# deliberately close to small panels.
 def _set_references(state, panelization, fc_object):
     coordinates = state["reference_coordinates"]
-    points_node = state["reference_points"]
     lines_node = state["reference_lines"]
     if coordinates is None:
         return
     coordinates.point.setNum(0)
-    points_node.numPoints = 0
     lines_node.numVertices.setNum(0)
     if panelization is None:
         return
     points = []
     line_counts = []
-    seen_groups = set()
-    per_panel = (
-        panelization.context.target_solver == "FasterCap" and
-        panelization.context.dimension == "3D")
-    if per_panel:
-        for panel in _reference_arrow_panels(panelization.panels_for(fc_object)):
-            start = _panel_center(panel)
-            points.extend((start, panel.reference_point))
-            line_counts.append(2)
+    object_panels = panelization.panels_for(fc_object)
+    all_points = [point for panel in object_panels for point in panel.points]
+    if all_points:
+        minima = [min(point[axis] for point in all_points) for axis in range(3)]
+        maxima = [max(point[axis] for point in all_points) for axis in range(3)]
+        diagonal = math.sqrt(sum(
+            (maxima[axis] - minima[axis]) ** 2 for axis in range(3)))
+        length = diagonal * float(
+            getattr(fc_object.ViewObject, "ArrowScale", 8.0)) / 100.0
     else:
-        for group in panelization.dielectric_groups:
-            if (group.entity.fc_object is not fc_object or
-                    group.index in seen_groups):
-                continue
-            seen_groups.add(group.index)
-            points.append(group.reference_point)
-            line_counts.append(1)
+        length = 0.0
+    if length <= 1.0e-12:
+        length = 1.0
+
+    for panel in _reference_arrow_panels(object_panels):
+        start = FreeCAD.Vector(*_panel_center(panel))
+        reference = FreeCAD.Vector(*panel.reference_point)
+        direction = reference - start
+        if direction.Length <= 1.0e-12:
+            continue
+        direction.normalize()
+        tip = start + direction * length
+        side = direction.cross(FreeCAD.Vector(0.0, 0.0, 1.0))
+        if side.Length <= 1.0e-9:
+            side = direction.cross(FreeCAD.Vector(1.0, 0.0, 0.0))
+        if side.Length <= 1.0e-12:
+            continue
+        side.normalize()
+        head = tip - direction * (length * 0.28)
+        wing = side * (length * 0.16)
+        wing_one = head + wing
+        wing_two = head - wing
+        points.extend([
+            tuple(start), tuple(tip),
+            tuple(tip), tuple(wing_one),
+            tuple(tip), tuple(wing_two)])
+        line_counts.extend((2, 2, 2))
     if points:
         coordinates.point.setValues(0, len(points), points)
-        points_node.numPoints = len(points)
         lines_node.numVertices.setValues(
             0, len(line_counts), line_counts)
 
@@ -300,9 +313,27 @@ def syncFCPanelPreviewVisibility(view_provider):
     state = getattr(view_provider, "_fcPanelPreview", None)
     if state is None:
         return
-    visible = bool(
-        state["has_data"] and view_provider.VObject.Visibility and
-        view_provider.VObject.ShowPanelization)
+    try:
+        vobj = view_provider.VObject
+        visible = bool(
+            state["has_data"] and vobj is not None and
+            vobj.Visibility and vobj.ShowPanelization)
+    except (AttributeError, ReferenceError, RuntimeError):
+        # FreeCAD can deliver a queued selection-clear notification after the
+        # document object and its ViewObject have already been destroyed.
+        # Coin nodes are transient and may safely be switched off without
+        # touching the stale Python wrapper.
+        state["selected"] = False
+        state["has_data"] = False
+        state["panelization"] = None
+        try:
+            state["switch"].whichChild = coin.SO_SWITCH_NONE
+            references = state["references_switch"]
+            if references is not None:
+                references.whichChild = coin.SO_SWITCH_NONE
+        except (AttributeError, ReferenceError, RuntimeError):
+            pass
+        return
     state["switch"].whichChild = (
         coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
     references = state["references_switch"]
@@ -339,6 +370,7 @@ def setFCPanelizationPreview(view_provider, panelization):
     _set_panel_geometry(state["good"], good)
     _set_panel_geometry(state["bad"], bad)
     state["has_data"] = bool(panels)
+    state["panelization"] = panelization
     if state["dielectric"]:
         _set_references(state, panelization, fc_object)
     syncFCPanelPreviewVisibility(view_provider)
@@ -364,9 +396,11 @@ def onFCPanelPreviewChanged(view_provider, prop):
         color = tuple(vobj.BadPanelColor)
         _set_color(state["bad"]["face_material"], color)
         _set_color(state["bad"]["line_material"], color)
-    elif prop == "ReferencePointColor":
+    elif prop == "ArrowColor":
         _set_color(state["reference_material"],
-                   tuple(vobj.ReferencePointColor))
+                   tuple(vobj.ArrowColor))
+    elif prop == "ArrowScale" and state["dielectric"]:
+        _set_references(state, state["panelization"], view_provider.Object)
     elif prop == "Transparency":
         transparency = _part_transparency(vobj)
         for branch in (state["good"], state["bad"]):
