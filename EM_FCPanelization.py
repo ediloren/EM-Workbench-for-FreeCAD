@@ -68,6 +68,10 @@ FCPANEL_MESH_SECOND_ORDER = 0
 FCPANEL_MESH_OPTIMIZE = 1
 FCPANEL_MESH_ALLOW_QUADS = 0
 
+# Bound FastCap reference-search temporaries independently of panel count.
+FCPANEL_GROUP_CANDIDATE_BLOCK = 64
+FCPANEL_GROUP_PANEL_BLOCK = 2048
+
 FC_ELEMENT_TRIANGLE = "T"
 FC_ELEMENT_QUAD = "Q"
 FC_ELEMENT_SEGMENT = "S"
@@ -1001,7 +1005,7 @@ def _coincident_patch_action(first, second, common_area, tolerance,
         dielectric.removed = True
 
 
-def _patch_boundary_deviation(edge, patch):
+def _patch_boundary_deviation(edge, patch, boundary_cache=None):
     """Maximum sampled distance from an intersection edge to a face rim.
 
     OCC edge-to-edge distToShape can stall on toroidal B-spline intersections.
@@ -1010,13 +1014,20 @@ def _patch_boundary_deviation(edge, patch):
     lies entirely on the patch boundary (the old minimum-distance test did).
     """
     try:
-        boundary_edges = list(patch.shape.Edges)
-        if not boundary_edges:
-            return float("inf")
+        key = id(patch.shape)
+        cached = None if boundary_cache is None else boundary_cache.get(key)
+        if cached is None:
+            boundary_edges = list(patch.shape.Edges)
+            if not boundary_edges:
+                return float("inf")
+            # Distance to this compound is the minimum over its edges. Keep
+            # point-to-edge queries, not the problematic edge-to-edge solver.
+            cached = (patch.shape, Part.makeCompound(boundary_edges))
+            if boundary_cache is not None:
+                boundary_cache[key] = cached
         samples = edge.discretize(Number=7)
         return max(
-            min(float(Part.Vertex(point).distToShape(boundary)[0])
-                for boundary in boundary_edges)
+            float(Part.Vertex(point).distToShape(cached[1])[0])
             for point in samples)
     except (AttributeError, RuntimeError, TypeError, ValueError):
         return float("inf")
@@ -1056,6 +1067,9 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
     diagnostics = []
     active = [patch for patch in patches if not patch.removed]
     index = FCBoundingBoxIndex(active)
+    # Shapes do not change during this validation pass. Release the cached
+    # rims at its end, before later fragmentation replaces the topology.
+    boundary_cache = {}
     for first, second in index.candidate_pairs(tolerance=tolerance):
         if first.removed or second.removed:
             continue
@@ -1107,8 +1121,10 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
             # is deliberately local to validation; it neither heals geometry
             # nor changes the tolerance used to build the topology.
             boundary_tolerance = edge_tolerance * 1.25
-            first_deviation = _patch_boundary_deviation(edge, first)
-            second_deviation = _patch_boundary_deviation(edge, second)
+            first_deviation = _patch_boundary_deviation(
+                edge, first, boundary_cache)
+            second_deviation = _patch_boundary_deviation(
+                edge, second, boundary_cache)
             if (first_deviation > boundary_tolerance or
                     second_deviation > boundary_tolerance):
                 crossing.append(
@@ -1988,7 +2004,7 @@ def _cad_edge_groups(patches):
     return groups
 
 
-def _point_on_edge_shape(point, edge_shape, tolerance):
+def _point_on_edge_shape(point, edge_shape, tolerance, bbox_cache=None):
     try:
         # MeshPart stores nodes as float32, whereas OCC curves use doubles.
         # Account only for the node's representational rounding (IEEE single
@@ -1996,6 +2012,21 @@ def _point_on_edge_shape(point, edge_shape, tolerance):
         # Exact mesh-node connectivity is still checked separately above.
         rounding = math.sqrt(sum(float(value)**2 for value in point)) * 2.0**-24
         tolerance = max(tolerance, rounding * (1.0 + 2.0**-23))
+        key = id(edge_shape)
+        cached = None if bbox_cache is None else bbox_cache.get(key)
+        if cached is None:
+            bbox = edge_shape.BoundBox
+            cached = (edge_shape, (bbox.XMin, bbox.YMin, bbox.ZMin,
+                                   bbox.XMax, bbox.YMax, bbox.ZMax))
+            if bbox_cache is not None:
+                bbox_cache[key] = cached
+        bounds = cached[1]
+        # A rejection uses the same rounding allowance as the exact test;
+        # rounded seam nodes must not be discarded by a tighter broad phase.
+        if any(point[axis] < bounds[axis] - tolerance or
+               point[axis] > bounds[axis + 3] + tolerance
+               for axis in range(3)):
+            return False
         return float(Part.Vertex(
             _tuple_vector(point)).distToShape(edge_shape)[0]) <= tolerance
     except (AttributeError, RuntimeError, TypeError, ValueError):
@@ -2012,6 +2043,7 @@ def _mesh_edge_key(first, second):
 # edge must also be represented by at least one mesh edge used across patches.
 def _validate_island_mesh(island, assigned, tolerance, diagnostics):
     edge_users = {}
+    bbox_cache = {}
     for patch, triangle in assigned:
         for index in range(3):
             first = triangle[index]
@@ -2040,9 +2072,9 @@ def _validate_island_mesh(island, assigned, tolerance, diagnostics):
         allowed = (
             external_shape is not None and
             _point_on_edge_shape(
-                first, external_shape, edge_tolerance) and
+                first, external_shape, edge_tolerance, bbox_cache) and
             _point_on_edge_shape(
-                second, external_shape, edge_tolerance))
+                second, external_shape, edge_tolerance, bbox_cache))
         if not allowed:
             boundary_failures.append((first, second))
     if boundary_failures:
@@ -2068,9 +2100,9 @@ def _validate_island_mesh(island, assigned, tolerance, diagnostics):
             pass
         if not any(
                 _point_on_edge_shape(
-                    first, edge, edge_tolerance) and
+                    first, edge, edge_tolerance, bbox_cache) and
                 _point_on_edge_shape(
-                    second, edge, edge_tolerance)
+                    second, edge, edge_tolerance, bbox_cache)
                 for first, second in cross_patch_edges):
             missing += 1
     if missing:
@@ -2228,9 +2260,46 @@ def _point_on_panel_side(point, panel, side, tolerance):
     return signed > tolerance if side == "outer" else signed < -tolerance
 
 
+def _dielectric_side_mask(points, indices, items, centers, normals, valid,
+                          tolerance):
+    """Test one bounded reference/panel block on the OUTPERM side."""
+    import numpy as np
+
+    # Subtract coordinates before the dot product, as the scalar predicate
+    # does. point.dot(normal) - center.dot(normal) loses precision when the
+    # model is far from the origin. Only three float matrices are needed.
+    signed = points[:, 0, None] - centers[indices, 0]
+    signed *= normals[indices, 0]
+    magnitude = np.abs(signed)
+    term = np.empty_like(signed)
+    for axis in (1, 2):
+        np.subtract(points[:, axis, None], centers[indices, axis], out=term)
+        term *= normals[indices, axis]
+        signed += term
+        np.abs(term, out=term)
+        magnitude += term
+    mask = signed > tolerance
+    mask &= valid[indices]
+
+    # Different arithmetic implementations may round a dot product
+    # differently. Resolve decisions near the threshold with the original
+    # FreeCAD predicate, including cancellation between large signed terms.
+    signed -= tolerance
+    np.abs(signed, out=signed)
+    magnitude *= 8.0 * np.finfo(np.float64).eps
+    uncertain = (signed <= magnitude) & (magnitude > 0.0) & valid[indices]
+    for row, column in zip(*np.nonzero(uncertain)):
+        mask[row, column] = _point_on_panel_side(
+            points[row], items[indices[column]], "outer", tolerance)
+    return mask
+
+
 # Group panels only after each has a usable reference, the same material pair,
-# and the same reference side required by list-file D records.
+# and the same reference side required by list-file D records. Keep the exact
+# greedy search and its first-candidate tie break; batch only the predicates.
 def _make_dielectric_groups(panelization):
+    import numpy as np
+
     tolerance = panelization.context.geometry_tolerance
     diagnostics = []
     panels = [panel for panel in panelization.panels
@@ -2243,26 +2312,56 @@ def _make_dielectric_groups(panelization):
 
     groups = []
     for items in by_semantics.values():
-        pending = list(items)
-        while pending:
-            seed = pending.pop(0)
-            candidates = [seed.reference_point]
-            candidates.extend(panel.reference_point for panel in pending)
-            candidates = [item for item in candidates if item is not None]
+        centers = np.zeros((len(items), 3), dtype=np.float64)
+        normals = np.zeros_like(centers)
+        valid = np.zeros(len(items), dtype=bool)
+        has_reference = np.array(
+            [panel.reference_point is not None for panel in items], dtype=bool)
+        for index, panel in enumerate(items):
+            normal = (_segment_normal(panel) if panel.kind == FC_ELEMENT_SEGMENT
+                      else _panel_normal(panel))
+            if normal is not None:
+                centers[index] = _vector_tuple(_panel_center(panel))
+                normals[index] = _vector_tuple(normal)
+                valid[index] = True
+
+        # Integer identities avoid repeated dataclass/list membership scans.
+        pending = np.arange(len(items))
+        while pending.size:
+            seed = items[pending[0]]
+            candidates = pending[has_reference[pending]]
             best_point = None
-            best_members = []
-            for candidate in candidates:
-                members = [panel for panel in [seed] + pending
-                           if _point_on_panel_side(
-                               candidate, panel, "outer", tolerance)]
-                # A group grown from this seed must contain the seed. A point
-                # covering more unrelated panels is not a valid replacement
-                # for the seed's own OUTPERM-side reference.
-                if seed not in members:
+            best_count = 0
+            for start in range(0, len(candidates), FCPANEL_GROUP_CANDIDATE_BLOCK):
+                candidate_indices = candidates[
+                    start:start + FCPANEL_GROUP_CANDIDATE_BLOCK]
+                points = np.asarray([items[index].reference_point
+                                     for index in candidate_indices],
+                                    dtype=np.float64)
+                # Every eligible reference must cover the seed, even when
+                # another point would cover more of the unrelated panels.
+                covers_seed = _dielectric_side_mask(
+                    points, pending[:1], items, centers, normals, valid,
+                    tolerance)[:, 0]
+                if not covers_seed.any():
                     continue
-                if len(members) > len(best_members):
-                    best_point, best_members = candidate, members
-            if best_point is None or seed not in best_members:
+                points = points[covers_seed]
+                candidate_indices = candidate_indices[covers_seed]
+                counts = np.zeros(len(points), dtype=np.int64)
+                for offset in range(0, len(pending), FCPANEL_GROUP_PANEL_BLOCK):
+                    indices = pending[offset:offset + FCPANEL_GROUP_PANEL_BLOCK]
+                    counts += _dielectric_side_mask(
+                        points, indices, items, centers, normals, valid,
+                        tolerance).sum(axis=1)
+                winner = int(counts.argmax())
+                if counts[winner] > best_count:
+                    best_count = int(counts[winner])
+                    best_point = items[candidate_indices[winner]].reference_point
+                # No later candidate can beat complete coverage; the first
+                # such point is already the winner under the original rule.
+                if best_count == len(pending):
+                    break
+            if best_point is None:
                 diagnostics.append(_diag(
                     FC_DIAGNOSTIC_ERROR,
                     "dielectric_reference_point_failed",
@@ -2270,9 +2369,17 @@ def _make_dielectric_groups(panelization):
                     seed.patch))
                 seed.problem_codes.append(
                     "dielectric_reference_point_failed")
+                pending = pending[1:]
                 continue
-            pending = [panel for panel in pending
-                       if panel not in best_members]
+            membership = np.empty(len(pending), dtype=bool)
+            points = np.asarray([best_point], dtype=np.float64)
+            for offset in range(0, len(pending), FCPANEL_GROUP_PANEL_BLOCK):
+                indices = pending[offset:offset + FCPANEL_GROUP_PANEL_BLOCK]
+                membership[offset:offset + len(indices)] = _dielectric_side_mask(
+                    points, indices, items, centers, normals, valid,
+                    tolerance)[0]
+            best_members = [items[index] for index in pending[membership]]
+            pending = pending[~membership]
             groups.append(FCDielectricPanelGroup(
                 seed.entity, best_members, seed.inner_permittivity,
                 seed.outer_permittivity, best_point, "outer"))
