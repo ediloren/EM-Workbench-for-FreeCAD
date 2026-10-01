@@ -5,9 +5,9 @@ classification consume the same replacement shapes.  Feature size expresses
 user intent, not an OCC sewing tolerance: increasing GeometryTolerance is not
 a substitute for these operations.
 
-This intentionally conservative first implementation handles removable small
-solid faces, near-aligned planar contacts and curved tangencies.  Unsupported
-or ambiguous features are retained and diagnosed, never deleted from a mesh.
+Conservative repairs handle removable small solid faces, near-aligned planes,
+local analytic interfaces and curved tangencies. Unsupported or ambiguous
+features are retained and diagnosed, never deleted from a mesh.
 """
 
 from dataclasses import dataclass
@@ -49,10 +49,10 @@ def ensureDefeaturingProperties(obj, solver=False):
          "Candidate feature size / original connected Base component bounding-box diagonal. Enter a decimal between 1e-8 and 0.1; displayed text retains its precision.",
          _relative_text(DEFAULT_RELATIVE_SIZE)),
         ("App::PropertyString", "DefeaturingRelativeDeviation",
-         "Allowed analysis-boundary movement / original component diagonal; face-removal bound is sampled. Enter a decimal between 0 and 0.1; displayed text retains its precision.",
+         "Cumulative allowed analysis-boundary movement / original component diagonal; face-removal and local-repair audits are sampled. Enter a decimal between 0 and 0.1; displayed text retains its precision.",
          _relative_text(DEFAULT_RELATIVE_DEVIATION)),
         ("App::PropertyEnumeration", "DefeaturingPolicy",
-         "Align near planar contacts; optionally regularize curved tangencies by bounded solid contraction", POLICIES)])
+         "Align and reconstruct nearby analysis interfaces; optionally regularize curved tangencies by bounded solid contraction", POLICIES)])
     for kind, name, description, default in definitions:
         if name not in obj.PropertiesList:
             obj.addProperty(kind, name, "Defeaturing", description)
@@ -206,7 +206,8 @@ def _samples(shape):
 
 
 def _safe_replacement(piece, candidate, others, tolerance):
-    """Never introduce shorts or new incompatible dielectric volume overlaps."""
+    """Preserve interfaces; never introduce shorts or incompatible overlaps."""
+    from EM_FCContactRepair import preservesContacts
     if candidate.isNull() or not candidate.isValid():
         return False
     if len(candidate.Solids) != len(piece.shape.Solids):
@@ -214,6 +215,9 @@ def _safe_replacement(piece, candidate, others, tolerance):
     for other in others:
         if other is piece:
             continue
+        if (_near(piece.shape, other.shape, tolerance) and
+                not preservesContacts(piece.shape, candidate, other.shape, tolerance)):
+            return False
         if other.obj is piece.obj:
             if (_near(piece.shape, other.shape, tolerance) and
                     piece.shape.distToShape(other.shape)[0] <= tolerance and
@@ -288,7 +292,7 @@ def _alignment(piece, reference, threshold, tolerance):
         for other in reference.shape.Faces:
             if not _is_plane(other) or not _near(face, other, threshold):
                 continue
-            if abs(normal.dot(_normal(other, other.CenterOfMass))) < 1.0-1e-9:
+            if abs(normal.dot(_normal(other, other.CenterOfMass))) < 1.0-1e-14:
                 continue
             offset = normal.dot(other.CenterOfMass-face.CenterOfMass)
             if abs(offset) <= threshold:
@@ -336,11 +340,11 @@ def _tangent_pair(piece, reference, threshold, tolerance):
 def prepareDefeaturingSources(objects, solver, tolerance, progress=None):
     """Return optional per-object source replacements plus diagnostics.
 
-    One removal, alignment and contraction pass per component bounds the work;
+    Bounded removal, alignment, local-repair and contraction passes limit work;
     no unbounded remesh/search loop.  Exact unchanged sources are reused when
     disabled.  Every accepted edit is reported so the user can assess its
     electrical significance.  Higher-priority/disabled components are fixed
-    references; a tie favours conductors, then document order.
+    references; ties favour existing interfaces, then conductors/document order.
     """
     from EM_FCCommon import normalizeFCBase, _fc_subshape
     from EM_FCGeometry import FCBoundingBoxIndex
@@ -373,9 +377,22 @@ def prepareDefeaturingSources(objects, solver, tolerance, progress=None):
     # components never invoke pairwise OCC operations.
     reach = max((p.size + 2*p.budget for p in ordered), default=0.0)
     neighbors = {id(p): set() for p in ordered}
+    anchored = set()
     for first, second in FCBoundingBoxIndex(ordered).candidate_pairs(tolerance=reach):
         neighbors[id(first)].add(id(second))
         neighbors[id(second)].add(id(first))
+        if not _near(first.shape, second.shape, tolerance):
+            continue
+        try:
+            common = Part.makeCompound(first.shape.Faces).common(
+                Part.makeCompound(second.shape.Faces), tolerance)
+            if common.Area > tolerance*tolerance:
+                anchored.update((id(first), id(second)))
+        except (AttributeError, RuntimeError, ValueError, TypeError):
+            pass
+    from EM_FCContactRepair import repairContacts
+    ordered.sort(key=lambda p: (p.settings.enabled, -p.settings.priority,
+                               id(p) not in anchored, p.kind != "FCConductor"))
     for index, piece in enumerate(ordered):
         if progress:
             progress("Preparing defeatured analysis geometry")
@@ -407,7 +424,7 @@ def prepareDefeaturingSources(objects, solver, tolerance, progress=None):
                 candidate.translate(shift)
                 if not _safe_replacement(piece, candidate, nearby, tolerance):
                     _warn(diagnostics, piece, "defeaturing_protected_contact",
-                          "Alignment retained: it could short distinct conductors or overlap incompatible materials")
+                          "Alignment retained: it could break an existing interface, short distinct conductors or overlap incompatible materials")
                     continue
                 piece.shape = candidate
                 piece.moved += shift.Length
@@ -418,6 +435,7 @@ def prepareDefeaturingSources(objects, solver, tolerance, progress=None):
                 break
             except (AttributeError, RuntimeError, ValueError, TypeError) as error:
                 _warn(diagnostics, piece, "defeaturing_alignment_failed", str(error))
+    repairContacts(ordered, neighbors, tolerance, diagnostics, progress)
     # Curved contacts can create zero-angle cusps even when every original
     # face is large. A bounded homothety opens such a contact; it is an explicit
     # approximation of the whole connected solid, NOT merely a mesh repair.

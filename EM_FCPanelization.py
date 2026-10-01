@@ -561,11 +561,23 @@ def _flatten_shapes(value):
 def _split_face_once(face, splitter_edges, tolerance):
     if not splitter_edges:
         return [face], None
+    def valid_partition(pieces):
+        # A coincident circular rim can make makeSplitShape return duplicate
+        # wires/double-area faces. Never prefer that over a valid one-face
+        # slice: invalid faces can terminate the native mesher, not just fail
+        # a later panel check. Curved Boolean trims have the same narrow area
+        # allowance as shared-topology fragmentation below.
+        return (bool(pieces) and all(piece.isValid() for piece in pieces) and
+                abs(sum(piece.Area for piece in pieces)-face.Area) <=
+                max(tolerance*tolerance, face.Area*2e-4))
+
     primary = []
     try:
         from BOPTools import SplitAPI
         result = SplitAPI.slice(face, splitter_edges, "Split", tolerance)
         primary = list(getattr(result, "Faces", []))
+        if not valid_partition(primary):
+            primary = []
         if len(primary) > 1:
             return primary, None
     except (ImportError, AttributeError, RuntimeError, TypeError, ValueError):
@@ -580,6 +592,8 @@ def _split_face_once(face, splitter_edges, tolerance):
                   for piece in (getattr(candidate, "Faces", []) if
                                 getattr(candidate, "ShapeType", "") != "Face"
                                 else [candidate])]
+        if not valid_partition(pieces):
+            pieces = []
         if len(pieces) > len(primary):
             return pieces, None
     except (AttributeError, RuntimeError, TypeError, ValueError) as error:
@@ -590,6 +604,16 @@ def _split_face_once(face, splitter_edges, tolerance):
         return primary, None
     if pieces:
         return pieces, None
+    # Both splitters can reject a tool that is precisely an existing rim.
+    # Confirm complete rim coverage geometrically before treating this as a
+    # no-op; a minimum-distance test would also hide real interior cuts.
+    try:
+        rim = Part.makeCompound(face.Edges)
+        if all(edge.common(rim, tolerance).Length >= edge.Length-tolerance
+               for edge in splitter_edges):
+            return [face], None
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        pass
     return [face], RuntimeError("OCC returned no split faces")
 
 
@@ -2584,8 +2608,15 @@ def _validate_conductor_regions(model, patches):
         def samples(entity, solid):
             result = []
             try:
-                result.append(solid.shape.CenterOfMass)
-            except (AttributeError, RuntimeError):
+                center = solid.shape.CenterOfMass
+                # A concave solid's volume centroid need not belong to the
+                # solid: the canonical example is the centre of a torus hole.
+                # Only use it as an overlap witness when it lies in the
+                # source solid's closure. Boundary-derived samples below are
+                # already guaranteed to belong to that source solid.
+                if solid.shape.isInside(center, tolerance, True):
+                    result.append(center)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
                 pass
             result.extend(
                 vertex.Point for vertex in getattr(
@@ -2593,7 +2624,7 @@ def _validate_conductor_regions(model, patches):
             result.extend(
                 patch.center for patch in patches
                 if patch.entity is entity and patch.center is not None and
-                solid.bbox.contains_point(patch.center, tolerance))
+                patch.source_face.classifier_solid is solid)
             return result
 
         overlap = False

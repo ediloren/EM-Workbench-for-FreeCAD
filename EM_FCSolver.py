@@ -137,10 +137,10 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
             "EM", "Only one FCSolver is allowed per document; returning the existing object.\n"))
         return existing
 
-    # The solver owns document-wide settings but no TopoShape.  An application
-    # feature therefore provides all required persistence without presenting it
-    # as a geometric Part object.
-    obj = FreeCAD.ActiveDocument.addObject("App::FeaturePython", name)
+    # Use the standard Part view provider so the solver starts visible and its
+    # tree item is presented consistently with FH/VH solver objects.  The Shape
+    # remains null: this object still owns settings, not analysis geometry.
+    obj = FreeCAD.ActiveDocument.addObject("Part::FeaturePython", name)
     obj.Label = translate("EM", name)
     _FCSolver(obj)
     if FreeCAD.GuiUp:
@@ -186,7 +186,6 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
     return obj
 
 
-# The proxy also migrates restored documents by adding only missing properties.
 class _FCSolver:
     '''The persistent global EM FasterCap / FastCap settings object.'''
     def __init__(self, obj):
@@ -211,9 +210,7 @@ class _FCSolver:
                 "App::PropertyEnumeration", "TargetSolver", "EM",
                 QT_TRANSLATE_NOOP("App::Property", "Capacitance solver used for the simulation"))
             obj.TargetSolver = EMFCSOLVER_SOLVERS
-            legacy_solver = str(getattr(obj, "Solver", EMFCSOLVER_DEFSOLVER))
-            obj.TargetSolver = (legacy_solver if legacy_solver in EMFCSOLVER_SOLVERS
-                                else EMFCSOLVER_DEFSOLVER)
+            obj.TargetSolver = EMFCSOLVER_DEFSOLVER
         if "Units" not in obj.PropertiesList:
             obj.addProperty(
                 "App::PropertyEnumeration", "Units", "EM",
@@ -249,13 +246,8 @@ class _FCSolver:
                 QT_TRANSLATE_NOOP("App::Property", "Zero-potential reference FCConductor for a 2D model"))
 
         self._ensureSolverProperties(obj)
-        if "Solver" in obj.PropertiesList:
-            # Preserve early development documents while exposing the renamed
-            # TargetSolver property required by the persistent model.
-            obj.setEditorMode("Solver", 2)
-
     # Table-driven creation keeps target-specific option metadata and defaults
-    # together while preserving existing values during restoration.
+    # together.
     def _ensureSolverProperties(self, obj):
         definitions = [
             ("App::PropertyFloatConstraint", "AutoMaxError", "FasterCap",
@@ -330,7 +322,6 @@ class _FCSolver:
     def onDocumentRestored(self, obj):
         self.Object = obj
         self._validatingReference = False
-        self._ensureProperties(obj)
         self._syncReferenceEditor(obj)
 
     def serialize(self, fid, headOrTail):
@@ -363,33 +354,22 @@ class _FCSolver:
         self.Type = state or "FCSolver"
 
 
-# There is no solver geometry to render; this provider supplies persistence and
-# the tree-view icon only.
+# There is no solver geometry to render; the standard Part view provider keeps
+# the settings object's tree presentation consistent with the other solvers.
 class _ViewProviderFCSolver:
     '''View provider for the non-geometric global solver settings object.'''
     def __init__(self, vobj):
         vobj.Proxy = self
         self.Object = vobj.Object
-        self._keepVisible(vobj)
 
     def attach(self, vobj):
         self.Object = vobj.Object
-        self._keepVisible(vobj)
-
-    def _keepVisible(self, vobj):
-        # This settings object has no 3D representation.  Hide the inherited
-        # visibility property and undo tree-shortcut toggles so its icon never
-        # appears disabled even though there is no geometry to display.
-        vobj.setEditorMode("Visibility", 2)
-        if not vobj.Visibility:
-            vobj.Visibility = True
 
     def updateData(self, fp, prop):
         return
 
     def onChanged(self, vp, prop):
-        if prop == "Visibility" and not vp.Visibility:
-            self._keepVisible(vp)
+        return
 
     def getIcon(self):
         return os.path.join(iconPath, 'EM_FCSolver.svg')
