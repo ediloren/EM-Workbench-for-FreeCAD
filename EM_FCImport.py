@@ -209,7 +209,7 @@ def getFCInputFiles(filename):
 
 # Open every discovered source in the MDI viewer, preserving the root model so
 # reload can rebuild the same physical/logical editor set.
-def openFCTextFiles(filename, model=None):
+def openFCTextFiles(filename, model=None, model_window=None):
     '''Open all physical files in a FasterCap / FastCap hierarchy for editing.
 
        'filename' is the root input filename. Every external file referenced
@@ -229,7 +229,7 @@ def openFCTextFiles(filename, model=None):
     root = os.path.abspath(os.path.expanduser(filename))
     editors = []
     for path in getFCInputFiles(root):
-        editor = _open_fc_text_file(path, root, model)
+        editor = _open_fc_text_file(path, root, model, model_window)
         if editor is not None:
             editors.append(editor)
     return editors
@@ -250,9 +250,34 @@ def _fc_document_name(path):
     return name
 
 
+# Return focus to the concrete 3D MDI subwindow captured before text editors
+# were opened. FreeCADGui.activateView() alone does not raise that Qt window
+# when a custom editor subwindow currently owns the MDI focus.
+def _fc_activate_model_view(model, model_window=None):
+    if not FreeCAD.GuiUp or not model:
+        return
+    FreeCAD.setActiveDocument(model.Document.Name)
+    FreeCADGui.Selection.clearSelection()
+    try:
+        if model_window is not None:
+            mdi_area = model_window.mdiArea()
+            if mdi_area is not None:
+                model_window.show()
+                mdi_area.setActiveSubWindow(model_window)
+                model_window.raise_()
+                model_window.setFocus()
+            else:
+                model_window = None
+        if model_window is None:
+            FreeCADGui.activateView("Gui::View3DInventor", False)
+        FreeCADGui.activeDocument().activeView().fitAll()
+    except (AttributeError, RuntimeError, TypeError):
+        pass
+
+
 # Geometry import delegates parsing to the reader, then optionally opens source
 # text; document creation and GUI presentation remain separate concerns.
-def importFCInputFile(filename, viewText=False):
+def importFCInputFile(filename, viewText=False, model_window=None):
     '''Import a FasterCap / FastCap file hierarchy into the active document.
 
        'filename' is the root list or geometry file to import.
@@ -276,10 +301,23 @@ def importFCInputFile(filename, viewText=False):
 
     result = read_fastcap_file(os.path.basename(path), os.path.dirname(path),
                                usePartType='compound')
+    if FreeCAD.GuiUp and model_window is None:
+        try:
+            FreeCADGui.activateView("Gui::View3DInventor", False)
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+        mdi_area = _fc_mdi_area()
+        active_window = (mdi_area.activeSubWindow()
+                         if mdi_area is not None else None)
+        if isinstance(active_window, _FCTextWindow):
+            if active_window.documentName == result.Document.Name:
+                model_window = active_window.modelWindow
+        elif active_window is not None:
+            model_window = active_window
     if FreeCAD.GuiUp and viewText:
         # Keep the files available for inspection and correction even when the
         # geometry parser reports an error.
-        openFCTextFiles(path, result)
+        openFCTextFiles(path, result, model_window)
     if not result:
         return False
 
@@ -289,10 +327,7 @@ def importFCInputFile(filename, viewText=False):
         # Keep it opaque while the child shells retain their imported RGBA
         # colors, including their individual transparency values.
         result.ViewObject.Transparency = 0
-        try:
-            FreeCADGui.activeDocument().activeView().fitAll()
-        except AttributeError:
-            pass
+        _fc_activate_model_view(result, model_window)
     return result
 
 
@@ -388,6 +423,7 @@ if FreeCAD.GuiUp:
             self.rootPath = None
             self.documentName = ""
             self.modelObjectNames = []
+            self.modelWindow = None
             self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
             self.setWindowTitle(os.path.basename(self.path) + "[*] - FasterCap")
 
@@ -443,6 +479,10 @@ if FreeCAD.GuiUp:
                 translate("EM", "Save All"), container)
             save_all_button.clicked.connect(self.saveAllFiles)
             button_layout.addWidget(save_all_button)
+            reload_button = QtWidgets.QPushButton(
+                translate("EM", "Save & Reload"), container)
+            reload_button.clicked.connect(self.reloadModel)
+            button_layout.addWidget(reload_button)
             close_all_button = QtWidgets.QPushButton(
                 translate("EM", "Close All"), container)
             close_all_button.clicked.connect(self.closeAllEditors)
@@ -462,9 +502,11 @@ if FreeCAD.GuiUp:
             self.loadFile()
             self.resize(820, 560)
 
-        def setImportContext(self, root_path, model=None):
+        def setImportContext(self, root_path, model=None, model_window=None):
             """Associate this editor with its root file and imported geometry."""
             self.rootPath = os.path.abspath(os.path.expanduser(root_path))
+            if model_window is not None:
+                self.modelWindow = model_window
             document = getattr(model, "Document", None)
             if document is None:
                 document = FreeCAD.ActiveDocument
@@ -509,7 +551,7 @@ if FreeCAD.GuiUp:
                 for name in self.modelObjectNames:
                     if document.getObject(name) is not None:
                         document.removeObject(name)
-                result = importFCInputFile(self.rootPath, False)
+                result = importFCInputFile(self.rootPath, False, self.modelWindow)
                 if not result:
                     document.abortTransaction()
                     document.recompute()
@@ -526,11 +568,10 @@ if FreeCAD.GuiUp:
             # update every related editor to point at the replacement objects
             for editor in related_editors:
                 try:
-                    editor.setImportContext(self.rootPath, result)
+                    editor.setImportContext(self.rootPath, result, self.modelWindow)
                 except RuntimeError:
                     continue
-            FreeCADGui.Selection.clearSelection()
-            FreeCADGui.Selection.addSelection(result)
+            _fc_activate_model_view(result, self.modelWindow)
             FreeCAD.Console.PrintMessage(
                 translate("EM", "Reloaded FasterCap / FastCap model from ") +
                 self.rootPath + "\n")
@@ -637,7 +678,7 @@ if FreeCAD.GuiUp:
 
     # Reuse an existing window by canonical source identity so recursive includes
     # cannot open duplicate editors for the same physical file.
-    def _open_fc_text_file(path, root_path=None, model=None):
+    def _open_fc_text_file(path, root_path=None, model=None, model_window=None):
         path = os.path.abspath(path)
         identity = os.path.normcase(os.path.realpath(path))
         existing = _fc_text_windows.get(identity)
@@ -645,7 +686,7 @@ if FreeCAD.GuiUp:
         if existing is not None:
             try:
                 if root_path is not None:
-                    existing.setImportContext(root_path, model)
+                    existing.setImportContext(root_path, model, model_window)
                 existing.show()
                 existing.raise_()
                 mdi_area = existing.mdiArea()
@@ -664,7 +705,7 @@ if FreeCAD.GuiUp:
         try:
             window = _FCTextWindow(path)
             if root_path is not None:
-                window.setImportContext(root_path, model)
+                window.setImportContext(root_path, model, model_window)
         except OSError as error:
             FreeCAD.Console.PrintError(
                 translate("EM", "Cannot open FasterCap text file ") +
@@ -783,16 +824,27 @@ if FreeCAD.GuiUp:
             if FreeCAD.ActiveDocument is None:
                 FreeCAD.newDocument(_fc_document_name(dialog.selectedFile()))
             document = FreeCAD.ActiveDocument
+            try:
+                FreeCADGui.activateView("Gui::View3DInventor", False)
+            except (AttributeError, RuntimeError, TypeError):
+                pass
+            mdi_area = _fc_mdi_area()
+            model_window = (mdi_area.activeSubWindow()
+                            if mdi_area is not None else None)
+            if isinstance(model_window, _FCTextWindow):
+                if model_window.documentName == document.Name:
+                    model_window = model_window.modelWindow
+                else:
+                    model_window = None
             # make the complete hierarchy import one undoable FreeCAD operation
             document.openTransaction(translate(
                 "EM", "Import FasterCap / FastCap file"))
             try:
                 result = importFCInputFile(dialog.selectedFile(),
-                                           dialog.viewText())
+                                           dialog.viewText(), model_window)
                 if result:
                     document.commitTransaction()
-                    FreeCADGui.Selection.clearSelection()
-                    FreeCADGui.Selection.addSelection(result)
+                    _fc_activate_model_view(result, model_window)
                 else:
                     document.abortTransaction()
             except Exception as error:
