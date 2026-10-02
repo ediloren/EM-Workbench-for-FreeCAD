@@ -62,6 +62,19 @@ def _fc_message(kind, message):
     printer("%s: %s\n" % (kind, message))
 
 
+class _FCImportCancelled(Exception):
+    """Internal signal raised when the GUI requests import cancellation."""
+
+
+def _fc_progress(callback, stage, current=0, total=0):
+    """Report coarse progress without coupling the parser to the GUI."""
+    if callback is not None and callback(stage, current, total) is False:
+        raise _FCImportCancelled()
+
+
+FC_PROGRESS_INTERVAL = 256
+
+
 def _fc_complex(value):
     """Parse FastCap's compact ``a-jb`` complex-number notation."""
     value = value.strip().lower().replace("i", "j")
@@ -182,11 +195,23 @@ def _fc_density_coloring(groups):
 
 # create either one Mesh per electrical element or a nested Part compound;
 # the outer compound contains one child compound per conductor or dielectric
-def _fc_build_result(groups, use_part_type, is_2d):
+def _fc_build_result(groups, use_part_type, is_2d, progress=None):
     """Build one child shape per electrical conductor or dielectric."""
     document = FreeCAD.ActiveDocument
     if document is None:
         document = FreeCAD.newDocument()
+    geometry_total = sum(len(group["panels"]) + len(group["segments"])
+                         for group in groups.values())
+    geometry_done = [0]
+
+    def geometry_built():
+        geometry_done[0] += 1
+        if (geometry_done[0] % FC_PROGRESS_INTERVAL == 0 or
+                geometry_done[0] == geometry_total):
+            _fc_progress(progress, "Building geometry",
+                         geometry_done[0], geometry_total)
+
+    _fc_progress(progress, "Building geometry", 0, geometry_total)
 
     if use_part_type == "mesh" and not is_2d:
         # A Part compound can contain only TopoShapes, not Mesh kernel objects.
@@ -242,6 +267,7 @@ def _fc_build_result(groups, use_part_type, is_2d):
                     triangles.append([vertices[0], vertices[2], vertices[3]])
                     if color is not None:
                         facet_colors.extend([color, color])
+                geometry_built()
 
             if not triangles:
                 continue
@@ -262,6 +288,7 @@ def _fc_build_result(groups, use_part_type, is_2d):
 
         mesh_group.ElementNames = element_names
         mesh_group.ElementTypes = element_types
+        _fc_progress(progress, "Finalizing model")
         document.recompute()
         return mesh_group
 
@@ -289,8 +316,10 @@ def _fc_build_result(groups, use_part_type, is_2d):
         for vertices, _color, _density in group["panels"]:
             wire = Part.makePolygon(vertices + [vertices[0]])
             shapes.append(Part.Face(wire))
+            geometry_built()
         for start, end, _color, _density in group["segments"]:
             shapes.append(Part.makeLine(start, end))
+            geometry_built()
         if not shapes:
             color_index += panel_count
             continue
@@ -327,6 +356,7 @@ def _fc_build_result(groups, use_part_type, is_2d):
         feature.addProperty("App::PropertyFloat", "DensityMaximum", "FasterCap")
         feature.DensityMinimum = density_min
         feature.DensityMaximum = density_max
+    _fc_progress(progress, "Finalizing model")
     document.recompute()
     if face_colors is not None:
         # Also color the generated outer compound because Part::Compound may
@@ -334,7 +364,8 @@ def _fc_build_result(groups, use_part_type, is_2d):
         feature.ViewObject.DiffuseColor = face_colors
     return feature
 
-def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
+def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound',
+                      progress=None):
     '''Import a FasterCap/FastCap 2D or 3D input hierarchy.
 
     'filename' is the name of the FasterCap/FastCap input file
@@ -387,8 +418,12 @@ def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
     # read the top-level file once and index any File / End definitions so the
     # same embedded geometry can be referenced multiple times with new offsets
     try:
+        _fc_progress(progress, "Reading input hierarchy")
         root_lines = _fc_read_lines(root)
         embedded = _fc_embedded_files(root_lines)
+    except _FCImportCancelled:
+        _fc_message("Warning", "FasterCap / FastCap import cancelled")
+        return False
     except (OSError, ValueError) as error:
         _fc_message("Error", "cannot read '%s': %s" % (root, error))
         return False
@@ -400,6 +435,7 @@ def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
     # order in which conductors, dielectrics, and panels occur in the input
     groups = {}
     active_sources = []
+    parsed_lines = [0]
 
     # parse() mirrors Parse2DInputFile() and Parse3DInputFile(). source_lines is
     # set only for a definition embedded between File and End statements; offset
@@ -442,6 +478,9 @@ def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
             # scan only the current file section; embedded sections are parsed later
             # when referenced by a conductor or dielectric statement
             for line_number, raw_line in lines:
+                parsed_lines[0] += 1
+                if parsed_lines[0] % FC_PROGRESS_INTERVAL == 0:
+                    _fc_progress(progress, "Reading input hierarchy")
                 fields = raw_line.split()
                 if not fields or fields[0].startswith(("*", "#", ";")):
                     continue
@@ -563,7 +602,24 @@ def read_fastcap_file(filename, folder=DEF_FOLDER, usePartType='compound'):
         parse(root)
         if not groups:
             raise ValueError("no panel or segment records were found")
-        return _fc_build_result(groups, usePartType, is_2d)
+        document = FreeCAD.ActiveDocument
+        existing_objects = ({obj.Name for obj in document.Objects}
+                            if document is not None else set())
+        try:
+            return _fc_build_result(groups, usePartType, is_2d, progress)
+        except _FCImportCancelled:
+            # Scripted GUI imports need the same cleanup that the command
+            # transaction provides when cancellation happens during building.
+            document = FreeCAD.ActiveDocument
+            if document is not None:
+                for obj in reversed(document.Objects):
+                    if obj.Name not in existing_objects:
+                        document.removeObject(obj.Name)
+                document.recompute()
+            raise
+    except _FCImportCancelled:
+        _fc_message("Warning", "FasterCap / FastCap import cancelled")
+        return False
     except (OSError, ValueError) as error:
         _fc_message("Error", str(error))
         return False

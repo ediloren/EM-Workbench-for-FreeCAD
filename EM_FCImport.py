@@ -89,6 +89,47 @@ EM_FCIMPORT_COMPLEX_COLOR = "#b05a00"
 EM_FCIMPORT_HEX_COLOR = "#c03080"
 
 
+if FreeCAD.GuiUp:
+    class _FCImportProgress:
+        """Modal, coarse-grained progress reporter used by the parser."""
+        def __init__(self):
+            self.cancelled = False
+            self.stage = None
+            self.dialog = QtWidgets.QProgressDialog(
+                translate("EM", "Reading FasterCap / FastCap input..."),
+                translate("EM", "Cancel"), 0, 0, FreeCADGui.getMainWindow())
+            self.dialog.setWindowTitle(
+                translate("EM", "Import FasterCap / FastCap model"))
+            self.dialog.setWindowModality(QtCore.Qt.WindowModal)
+            self.dialog.setMinimumDuration(0)
+            self.dialog.setAutoClose(False)
+            self.dialog.setAutoReset(False)
+            self.dialog.show()
+
+        def __call__(self, stage, current, total):
+            if self.dialog is None:
+                return False
+            if stage != self.stage:
+                self.stage = stage
+                self.dialog.setLabelText(translate("EM", stage + "..."))
+            if total > 0:
+                if (self.dialog.minimum() != 0 or
+                        self.dialog.maximum() != total):
+                    self.dialog.setRange(0, total)
+                self.dialog.setValue(current)
+            elif self.dialog.minimum() != 0 or self.dialog.maximum() != 0:
+                self.dialog.setRange(0, 0)
+            QtWidgets.QApplication.processEvents()
+            self.cancelled = self.dialog.wasCanceled()
+            return not self.cancelled
+
+        def close(self):
+            if self.dialog is not None:
+                self.dialog.close()
+                self.dialog.deleteLater()
+                self.dialog = None
+
+
 def _fc_record(fields):
     """Return the normalized record name used while following input files."""
     if not fields:
@@ -299,8 +340,15 @@ def importFCInputFile(filename, viewText=False, model_window=None):
     if FreeCAD.ActiveDocument is None:
         FreeCAD.newDocument(_fc_document_name(path))
 
-    result = read_fastcap_file(os.path.basename(path), os.path.dirname(path),
-                               usePartType='compound')
+    progress = _FCImportProgress() if FreeCAD.GuiUp else None
+    try:
+        result = read_fastcap_file(
+            os.path.basename(path), os.path.dirname(path),
+            usePartType='compound', progress=progress)
+        cancelled = progress.cancelled if progress is not None else False
+    finally:
+        if progress is not None:
+            progress.close()
     if FreeCAD.GuiUp and model_window is None:
         try:
             FreeCADGui.activateView("Gui::View3DInventor", False)
@@ -310,11 +358,12 @@ def importFCInputFile(filename, viewText=False, model_window=None):
         active_window = (mdi_area.activeSubWindow()
                          if mdi_area is not None else None)
         if isinstance(active_window, _FCTextWindow):
-            if active_window.documentName == result.Document.Name:
+            if (result and
+                    active_window.documentName == result.Document.Name):
                 model_window = active_window.modelWindow
         elif active_window is not None:
             model_window = active_window
-    if FreeCAD.GuiUp and viewText:
+    if FreeCAD.GuiUp and viewText and not cancelled:
         # Keep the files available for inspection and correction even when the
         # geometry parser reports an error.
         openFCTextFiles(path, result, model_window)
@@ -480,7 +529,7 @@ if FreeCAD.GuiUp:
             save_all_button.clicked.connect(self.saveAllFiles)
             button_layout.addWidget(save_all_button)
             reload_button = QtWidgets.QPushButton(
-                translate("EM", "Save & Reload"), container)
+                translate("EM", "Save && Reload"), container)
             reload_button.clicked.connect(self.reloadModel)
             button_layout.addWidget(reload_button)
             close_all_button = QtWidgets.QPushButton(
