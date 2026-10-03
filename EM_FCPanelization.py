@@ -71,6 +71,10 @@ FCPANEL_MESH_ALLOW_QUADS = 0
 # Bound FastCap reference-search temporaries independently of panel count.
 FCPANEL_GROUP_CANDIDATE_BLOCK = 64
 FCPANEL_GROUP_PANEL_BLOCK = 2048
+# Hot-loop callbacks are intentionally sparse.  The GUI applies an additional
+# time throttle before processing events, keeping progress overhead negligible
+# for both small models and meshes with hundreds of thousands of panels.
+FCPANEL_PROGRESS_STRIDE = 256
 
 FC_ELEMENT_TRIANGLE = "T"
 FC_ELEMENT_QUAD = "Q"
@@ -91,6 +95,16 @@ def _progress_checkpoint(callback, phase):
     """Notify the optional caller without coupling panelization to Qt."""
     if callback is not None:
         callback(phase)
+
+
+def _progress_chunks(sequence, callback, phase):
+    """Yield small slices, notifying once per slice when progress is active."""
+    if callback is None:
+        yield 0, sequence
+        return
+    for start in range(0, len(sequence), FCPANEL_PROGRESS_STRIDE):
+        callback(phase)
+        yield start, sequence[start:start + FCPANEL_PROGRESS_STRIDE]
 
 
 @dataclass
@@ -1624,23 +1638,27 @@ def _triangle_minimum_angle(points):
     return min(angles)
 
 
-def _indexed_triangles(vertices, facets):
+def _indexed_triangles(vertices, facets, progress=None):
     # Mesh.Topology can expose point coordinates either as FreeCAD vectors or
     # as tuples.  Normalize both representations before quality processing.
     points = []
-    for vertex in vertices:
-        try:
-            points.append((float(vertex.x), float(vertex.y), float(vertex.z)))
-        except AttributeError:
-            points.append(tuple(float(value) for value in vertex[:3]))
+    for _start, vertex_chunk in _progress_chunks(
+            vertices, progress, "Creating solver panels"):
+        for vertex in vertex_chunk:
+            try:
+                points.append((float(vertex.x), float(vertex.y), float(vertex.z)))
+            except AttributeError:
+                points.append(tuple(float(value) for value in vertex[:3]))
     triangles = []
-    for facet in facets:
-        if len(facet) != 3:
-            continue
-        try:
-            triangles.append(tuple(points[int(index)] for index in facet))
-        except (IndexError, TypeError, ValueError):
-            continue
+    for _start, facet_chunk in _progress_chunks(
+            facets, progress, "Creating solver panels"):
+        for facet in facet_chunk:
+            if len(facet) != 3:
+                continue
+            try:
+                triangles.append(tuple(points[int(index)] for index in facet))
+            except (IndexError, TypeError, ValueError):
+                continue
     return triangles
 
 
@@ -1670,21 +1688,29 @@ def _diagonals_cross(first, second, third, fourth, normal, tolerance):
             orient(c, d, a) * orient(c, d, b) < -epsilon * epsilon)
 
 
-def _improve_triangle_mesh(triangles, tolerance):
+def _improve_triangle_mesh(triangles, tolerance, progress=None):
     # Local max-min edge flips are the Delaunay operation needed here: they keep
     # every vertex and boundary edge fixed while replacing a poor internal
     # diagonal when the alternate one increases the smaller triangle angle.
     result = [tuple(triangle) for triangle in triangles]
     for _iteration in range(12):
+        _progress_checkpoint(progress, "Creating solver panels")
         edge_users = {}
-        for triangle_index, triangle in enumerate(result):
-            for edge_index in range(3):
-                edge = tuple(sorted((triangle[edge_index],
-                                     triangle[(edge_index + 1) % 3])))
-                edge_users.setdefault(edge, []).append(triangle_index)
+        for start, triangle_chunk in _progress_chunks(
+                result, progress, "Creating solver panels"):
+            for offset, triangle in enumerate(triangle_chunk):
+                triangle_index = start + offset
+                for edge_index in range(3):
+                    edge = tuple(sorted((triangle[edge_index],
+                                         triangle[(edge_index + 1) % 3])))
+                    edge_users.setdefault(edge, []).append(triangle_index)
         changed = False
         touched = set()
-        for edge, users in edge_users.items():
+        next_progress = 0
+        for edge_index, (edge, users) in enumerate(edge_users.items()):
+            if progress is not None and edge_index == next_progress:
+                progress("Creating solver panels")
+                next_progress += FCPANEL_PROGRESS_STRIDE
             if len(users) != 2 or any(index in touched for index in users):
                 continue
             first_index, second_index = users
@@ -1831,10 +1857,14 @@ def _triangle_patch_score(triangle, patch, tolerance, center_distance=None):
     return max(distances), sum(distances)
 
 
-def _assign_island_triangles(island, triangles, tolerance):
+def _assign_island_triangles(island, triangles, tolerance, progress=None):
     """Assign complete triangles to one fragmented CAD patch."""
     assigned = []
-    for triangle in triangles:
+    next_progress = 0
+    for triangle_index, triangle in enumerate(triangles):
+        if progress is not None and triangle_index == next_progress:
+            progress("Creating solver panels")
+            next_progress += FCPANEL_PROGRESS_STRIDE
         vectors = [_tuple_vector(point) for point in triangle]
         center = sum(vectors[1:], vectors[0]) * (1.0 / 3.0)
         edge_scale = max(_panel_edge_lengths(triangle), default=0.0)
@@ -1872,31 +1902,45 @@ def _assign_island_triangles(island, triangles, tolerance):
     # Edge flips may improve triangles inside one CAD face, but must never see
     # triangles from the other side of a material or topology boundary.
     groups = {}
-    for patch, triangle in assigned:
-        groups.setdefault(id(patch), [patch, []])[1].append(triangle)
+    for _start, assigned_chunk in _progress_chunks(
+            assigned, progress, "Creating solver panels"):
+        for patch, triangle in assigned_chunk:
+            groups.setdefault(id(patch), [patch, []])[1].append(triangle)
     improved = []
     for patch, patch_triangles in groups.values():
         improved.extend(
             (patch, triangle) for triangle in
-            _improve_triangle_mesh(patch_triangles, tolerance))
+            _improve_triangle_mesh(
+                patch_triangles, tolerance, progress))
     return improved, None
 
 
-def _assigned_quality(assigned):
-    return _tessellation_quality(
-        [triangle for _patch, triangle in assigned])
+def _assigned_quality(assigned, progress=None):
+    minimum = None
+    for _start, assigned_chunk in _progress_chunks(
+            assigned, progress, "Creating solver panels"):
+        for _patch, triangle in assigned_chunk:
+            angle = _triangle_minimum_angle(triangle)
+            minimum = angle if minimum is None else min(minimum, angle)
+    return (minimum if minimum is not None else -1.0, -len(assigned))
 
 
-def _assigned_maximum_edge(assigned):
-    return max((
-        max(_panel_edge_lengths(triangle), default=0.0)
-        for _patch, triangle in assigned), default=0.0)
+def _assigned_maximum_edge(assigned, progress=None):
+    maximum_edge = 0.0
+    for _start, assigned_chunk in _progress_chunks(
+            assigned, progress, "Creating solver panels"):
+        for _patch, triangle in assigned_chunk:
+            maximum_edge = max(
+                maximum_edge,
+                max(_panel_edge_lengths(triangle), default=0.0))
+    return maximum_edge
 
 
-def _assigned_meets_maximum(assigned, target_solver, maximum, tolerance):
+def _assigned_meets_maximum(assigned, target_solver, maximum, tolerance,
+                            progress=None):
     if target_solver != "FastCap" or maximum <= 0.0:
         return True
-    return _assigned_maximum_edge(assigned) <= (
+    return _assigned_maximum_edge(assigned, progress) <= (
         maximum + max(tolerance, maximum * 1.0e-9))
 
 
@@ -1906,7 +1950,7 @@ def _assigned_meets_maximum(assigned, target_solver, maximum, tolerance):
 # would create nonmatching nodes along seams even if every child triangle were
 # individually valid.
 def _tessellate_island(island, target_solver, maximum, tolerance,
-                       diagnostics):
+                       diagnostics, progress=None):
     relative_tolerance = min(
         float(getattr(
             patch.entity.fc_object, "PanelCurvatureTolerance",
@@ -1941,22 +1985,25 @@ def _tessellate_island(island, target_solver, maximum, tolerance,
                 # the emitted edges before accepting the island mesh.
                 arguments["MaxLength"] = maximum * factor
             mesh = MeshPart.meshFromShape(**arguments)
+            _progress_checkpoint(progress, "Creating solver panels")
             vertices, facets = mesh.Topology
-            triangles = _indexed_triangles(vertices, facets)
+            triangles = _indexed_triangles(vertices, facets, progress)
             if not triangles:
                 failures.append("Netgen returned no triangular facets")
                 continue
             assigned, assignment_error = _assign_island_triangles(
-                island, triangles, tolerance)
+                island, triangles, tolerance, progress)
             if assignment_error is not None:
                 failures.append(assignment_error)
                 continue
             candidates.append(assigned)
-            if (_assigned_quality(assigned)[0] >=
+            if (_assigned_quality(assigned, progress)[0] >=
                     FCPANEL_MIN_TRIANGLE_ANGLE and
                     _assigned_meets_maximum(
-                        assigned, target_solver, maximum, tolerance)):
+                        assigned, target_solver, maximum, tolerance, progress)):
                 return assigned
+        except FCPanelizationCancelled:
+            raise
         except (ImportError, AttributeError, RuntimeError, TypeError,
                 ValueError) as error:
             failures.append(str(error))
@@ -1965,16 +2012,16 @@ def _tessellate_island(island, target_solver, maximum, tolerance,
         compliant = [
             assigned for assigned in candidates
             if _assigned_meets_maximum(
-                assigned, target_solver, maximum, tolerance)]
+                assigned, target_solver, maximum, tolerance, progress)]
         pool = compliant or candidates
-        best = max(pool, key=_assigned_quality)
+        best = max(pool, key=lambda item: _assigned_quality(item, progress))
         if not compliant and target_solver == "FastCap" and maximum > 0.0:
             diagnostics.append(_diag(
                 FC_DIAGNOSTIC_ERROR, "maximum_panel_size_exceeded",
                 "Netgen could not satisfy FastCap MaxPanelSize on topology "
                 "island %d" % island.index, island.patches[0], details={
                     "requested": maximum,
-                    "actual": _assigned_maximum_edge(best)}))
+                    "actual": _assigned_maximum_edge(best, progress)}))
         # Exact trim corners may make the requested 15-degree minimum
         # impossible. Preserve complete coverage and let the existing panel
         # validator identify every remaining acute triangle.
@@ -2065,16 +2112,19 @@ def _mesh_edge_key(first, second):
 # islands may have no one-sided mesh edge. On open islands, every one-sided
 # edge must terminate on an original external CAD boundary. Each shared CAD
 # edge must also be represented by at least one mesh edge used across patches.
-def _validate_island_mesh(island, assigned, tolerance, diagnostics):
+def _validate_island_mesh(island, assigned, tolerance, diagnostics,
+                          progress=None):
     edge_users = {}
     bbox_cache = {}
-    for patch, triangle in assigned:
-        for index in range(3):
-            first = triangle[index]
-            second = triangle[(index + 1) % 3]
-            edge_users.setdefault(
-                _mesh_edge_key(first, second), []).append(
-                    (patch, first, second))
+    for _start, assigned_chunk in _progress_chunks(
+            assigned, progress, "Creating solver panels"):
+        for patch, triangle in assigned_chunk:
+            for index in range(3):
+                first = triangle[index]
+                second = triangle[(index + 1) % 3]
+                edge_users.setdefault(
+                    _mesh_edge_key(first, second), []).append(
+                        (patch, first, second))
 
     cad_groups = _cad_edge_groups(island.patches)
     try:
@@ -2089,7 +2139,11 @@ def _validate_island_mesh(island, assigned, tolerance, diagnostics):
         tolerance * 10.0, island.bbox.diagonal * 1.0e-10, 1.0e-12)
 
     boundary_failures = []
-    for users in edge_users.values():
+    next_progress = 0
+    for edge_index, users in enumerate(edge_users.values()):
+        if progress is not None and edge_index == next_progress:
+            progress("Creating solver panels")
+            next_progress += FCPANEL_PROGRESS_STRIDE
         if len(users) != 1:
             continue
         _patch, first, second = users[0]
@@ -2114,7 +2168,11 @@ def _validate_island_mesh(island, assigned, tolerance, diagnostics):
         if len({id(item[0]) for item in users}) > 1:
             cross_patch_edges.append((users[0][1], users[0][2]))
     missing = 0
-    for edge, users in cad_groups:
+    next_progress = 0
+    for edge_index, (edge, users) in enumerate(cad_groups):
+        if progress is not None and edge_index == next_progress:
+            progress("Creating solver panels")
+            next_progress += FCPANEL_PROGRESS_STRIDE
         if len(users) < 2:
             continue
         try:
@@ -2138,9 +2196,9 @@ def _validate_island_mesh(island, assigned, tolerance, diagnostics):
 
 
 def _panelize_island_3d(island, target_solver, maximum, tolerance,
-                        diagnostics):
+                        diagnostics, progress=None):
     assigned = _tessellate_island(
-        island, target_solver, maximum, tolerance, diagnostics)
+        island, target_solver, maximum, tolerance, diagnostics, progress)
     if not assigned:
         diagnostics.append(_diag(
             FC_DIAGNOSTIC_ERROR, "empty_island_panelization",
@@ -2149,9 +2207,13 @@ def _panelize_island_3d(island, target_solver, maximum, tolerance,
         return []
 
     _validate_island_mesh(
-        island, assigned, tolerance, diagnostics)
+        island, assigned, tolerance, diagnostics, progress)
     result = []
-    for patch, triangle in assigned:
+    next_progress = 0
+    for assigned_index, (patch, triangle) in enumerate(assigned):
+        if progress is not None and assigned_index == next_progress:
+            progress("Creating solver panels")
+            next_progress += FCPANEL_PROGRESS_STRIDE
         normal = _surface_normal_for_panel(
             patch.shape, triangle, patch.normal)
         result.append((
@@ -2176,13 +2238,16 @@ def _edge_points_2d(edge, relative_tolerance, bbox):
 
 
 # The 2D formulation emits oriented boundary segments rather than area panels.
-def _panelize_2d(patches, target_solver, maximum, diagnostics):
+def _panelize_2d(patches, target_solver, maximum, diagnostics,
+                 progress=None):
     if target_solver != "FasterCap":
         diagnostics.append(_diag(
             FC_DIAGNOSTIC_ERROR, "fastcap_2d_unsupported",
             "FastCap does not support the FasterCap 2D S-segment format"))
     raw = []
     seen = set()
+    progress_count = 0
+    next_progress = FCPANEL_PROGRESS_STRIDE
     for patch in patches:
         relative = float(getattr(
             patch.entity.fc_object, "PanelCurvatureTolerance",
@@ -2209,6 +2274,11 @@ def _panelize_2d(patches, target_solver, maximum, diagnostics):
                         continue
                     seen.add(entity_key)
                     raw.append((patch, FC_ELEMENT_SEGMENT, point_pair))
+                    progress_count += 1
+                    if (progress is not None and
+                            progress_count == next_progress):
+                        progress("Creating solver panels")
+                        next_progress += FCPANEL_PROGRESS_STRIDE
     return raw
 
 
@@ -2321,7 +2391,7 @@ def _dielectric_side_mask(points, indices, items, centers, normals, valid,
 # Group panels only after each has a usable reference, the same material pair,
 # and the same reference side required by list-file D records. Keep the exact
 # greedy search and its first-candidate tie break; batch only the predicates.
-def _make_dielectric_groups(panelization):
+def _make_dielectric_groups(panelization, progress=None):
     import numpy as np
 
     tolerance = panelization.context.geometry_tolerance
@@ -2329,7 +2399,11 @@ def _make_dielectric_groups(panelization):
     panels = [panel for panel in panelization.panels
               if panel.entity.kind == "FCDielectric"]
     by_semantics = {}
-    for panel in panels:
+    next_progress = 0
+    for panel_index, panel in enumerate(panels):
+        if progress is not None and panel_index == next_progress:
+            progress("Grouping dielectric panels")
+            next_progress += FCPANEL_PROGRESS_STRIDE
         key = (id(panel.entity), round(panel.outer_permittivity, 12),
                round(panel.inner_permittivity, 12))
         by_semantics.setdefault(key, []).append(panel)
@@ -2341,7 +2415,11 @@ def _make_dielectric_groups(panelization):
         valid = np.zeros(len(items), dtype=bool)
         has_reference = np.array(
             [panel.reference_point is not None for panel in items], dtype=bool)
+        next_progress = 0
         for index, panel in enumerate(items):
+            if progress is not None and index == next_progress:
+                progress("Grouping dielectric panels")
+                next_progress += FCPANEL_PROGRESS_STRIDE
             normal = (_segment_normal(panel) if panel.kind == FC_ELEMENT_SEGMENT
                       else _panel_normal(panel))
             if normal is not None:
@@ -2352,11 +2430,13 @@ def _make_dielectric_groups(panelization):
         # Integer identities avoid repeated dataclass/list membership scans.
         pending = np.arange(len(items))
         while pending.size:
+            _progress_checkpoint(progress, "Grouping dielectric panels")
             seed = items[pending[0]]
             candidates = pending[has_reference[pending]]
             best_point = None
             best_count = 0
             for start in range(0, len(candidates), FCPANEL_GROUP_CANDIDATE_BLOCK):
+                _progress_checkpoint(progress, "Grouping dielectric panels")
                 candidate_indices = candidates[
                     start:start + FCPANEL_GROUP_CANDIDATE_BLOCK]
                 points = np.asarray([items[index].reference_point
@@ -2460,11 +2540,15 @@ def _panel_key(panel, tolerance):
 # Panel-level validation --------------------------------------------------
 # Check solver representability and pairwise conflicts on the final coordinates,
 # after every split, merge, tessellation, and subdivision operation.
-def _validate_panels(panelization):
+def _validate_panels(panelization, progress=None):
     diagnostics = []
     tolerance = panelization.context.geometry_tolerance
     seen = {}
-    for panel in panelization.panels:
+    next_progress = 0
+    for panel_index, panel in enumerate(panelization.panels):
+        if progress is not None and panel_index == next_progress:
+            progress("Validating solver panels")
+            next_progress += FCPANEL_PROGRESS_STRIDE
         lengths = _panel_edge_lengths(panel.points)
         minimum = min(lengths) if lengths else 0.0
         maximum = max(lengths) if lengths else 0.0
@@ -2683,11 +2767,16 @@ def _validate_conductor_regions(model, patches):
 
 # Canonical coordinate keys catch duplicate elements even when they came from
 # different patches or use opposite cyclic starting vertices.
-def _remove_duplicate_solver_panels(panels, tolerance, diagnostics):
+def _remove_duplicate_solver_panels(panels, tolerance, diagnostics,
+                                    progress=None):
     """Remove exact same-entity duplicates without hiding conflicts."""
     result = []
     seen = {}
-    for panel in panels:
+    next_progress = 0
+    for panel_index, panel in enumerate(panels):
+        if progress is not None and panel_index == next_progress:
+            progress("Validating solver panels")
+            next_progress += FCPANEL_PROGRESS_STRIDE
         semantics = (
             panel.surrounding_permittivity,
             panel.inner_permittivity, panel.outer_permittivity)
@@ -2706,7 +2795,8 @@ def _remove_duplicate_solver_panels(panels, tolerance, diagnostics):
 
 # Dispatch dimension-specific discretization, attach references, and preserve
 # the shared 3D island topology through panel construction.
-def _make_panels(model, patches, diagnostics, meshing_islands=None):
+def _make_panels(model, patches, diagnostics, meshing_islands=None,
+                 progress=None):
     active = [patch for patch in patches if not patch.removed]
     target = model.context.target_solver
     maximum = _solver_length_to_mm(
@@ -2715,20 +2805,30 @@ def _make_panels(model, patches, diagnostics, meshing_islands=None):
     panels = []
 
     if model.context.dimension == "2D":
-        raw = _panelize_2d(active, target, maximum, diagnostics)
-        for patch, kind, points in raw:
+        raw = _panelize_2d(
+            active, target, maximum, diagnostics, progress)
+        next_progress = 0
+        for raw_index, (patch, kind, points) in enumerate(raw):
+            if progress is not None and raw_index == next_progress:
+                progress("Creating solver panels")
+                next_progress += FCPANEL_PROGRESS_STRIDE
             panel = FCPanel(kind, tuple(points), patch.entity, patch,
                             len(panels))
             panels.append(panel)
     else:
         for island in meshing_islands or ():
+            _progress_checkpoint(progress, "Creating solver panels")
             for patch, kind, points in _panelize_island_3d(
                     island, target, maximum,
-                    model.context.geometry_tolerance, diagnostics):
+                    model.context.geometry_tolerance, diagnostics, progress):
                 panels.append(FCPanel(
                     kind, tuple(points), patch.entity, patch, len(panels)))
 
-    for panel in panels:
+    next_progress = 0
+    for panel_index, panel in enumerate(panels):
+        if progress is not None and panel_index == next_progress:
+            progress("Creating solver panels")
+            next_progress += FCPANEL_PROGRESS_STRIDE
         if panel.entity.kind == "FCConductor":
             panel.surrounding_permittivity = (
                 panel.patch.surrounding_permittivity)
@@ -2814,10 +2914,10 @@ def createFCPanelization(document=None, solver=None, progress=None):
 
     _progress_checkpoint(progress, "Creating solver panels")
     panels = _make_panels(
-        geometry, patches, diagnostics, meshing_islands)
+        geometry, patches, diagnostics, meshing_islands, progress)
     _progress_checkpoint(progress, "Validating solver panels")
     panels = _remove_duplicate_solver_panels(
-        panels, geometry.context.geometry_tolerance, diagnostics)
+        panels, geometry.context.geometry_tolerance, diagnostics, progress)
     if not panels:
         diagnostics.append(FCDiagnostic(
             FC_DIAGNOSTIC_ERROR, "empty_panelization",
@@ -2831,8 +2931,9 @@ def createFCPanelization(document=None, solver=None, progress=None):
     # their candidate-by-panel search is essential for dense curved surfaces.
     if not (geometry.context.target_solver == "FasterCap" and
             geometry.context.dimension == "3D"):
-        _make_dielectric_groups(result)
-    _validate_panels(result)
+        _progress_checkpoint(progress, "Grouping dielectric panels")
+        _make_dielectric_groups(result, progress)
+    _validate_panels(result, progress)
 
     _progress_checkpoint(progress, "Publishing panelization preview")
     _PANELIZATION_CACHE[id(document)] = result

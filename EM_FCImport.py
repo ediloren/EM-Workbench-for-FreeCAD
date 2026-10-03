@@ -58,6 +58,10 @@ if FreeCAD.GuiUp:
         _FCQShortcut = QtWidgets.QShortcut
     else:
         _FCQShortcut = QtGui.QShortcut
+    if hasattr(QtWidgets, "QAction"):
+        _FCQAction = QtWidgets.QAction
+    else:
+        _FCQAction = QtGui.QAction
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
     # \cond
@@ -128,6 +132,205 @@ if FreeCAD.GuiUp:
                 self.dialog.close()
                 self.dialog.deleteLater()
                 self.dialog = None
+
+
+    def _fc_density_legend_text_color():
+        """Return black or white for the configured upper view background."""
+        preferences = FreeCAD.ParamGet(
+            "User parameter:BaseApp/Preferences/View")
+        if preferences.GetBool("Gradient", True):
+            packed = preferences.GetUnsigned("BackgroundColor2", 859006463)
+        else:
+            packed = preferences.GetUnsigned("BackgroundColor", 336897023)
+        red = (packed >> 24) & 255
+        green = (packed >> 16) & 255
+        blue = (packed >> 8) & 255
+        luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        return (QtGui.QColor(0, 0, 0) if luminance >= 140.0
+                else QtGui.QColor(255, 255, 255))
+
+
+    class _FCDensityLegend(QtWidgets.QWidget):
+        """Camera-independent charge-density legend over a 3D view."""
+        WIDTH = 142
+        HEIGHT = 196
+        MARGIN = 12
+
+        def __init__(self, parent, minimum, maximum):
+            super(_FCDensityLegend, self).__init__(parent)
+            self.minimum = float(minimum)
+            self.maximum = float(maximum)
+            self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+            self.setAttribute(QtCore.Qt.WA_NoSystemBackground, True)
+            self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+            self.setFixedWidth(self.WIDTH)
+            self.setFixedHeight(min(self.HEIGHT,
+                                    max(60, parent.height() - 2 * self.MARGIN)))
+            parent.installEventFilter(self)
+            self.reposition()
+            self.show()
+            self.raise_()
+
+        def reposition(self):
+            parent = self.parentWidget()
+            if parent is not None:
+                height = min(self.HEIGHT,
+                             max(60, parent.height() - 2 * self.MARGIN))
+                if height != self.height():
+                    self.setFixedHeight(height)
+                self.move(self.MARGIN, self.MARGIN)
+
+        def eventFilter(self, watched, event):
+            if (watched is self.parentWidget() and
+                    event.type() in (QtCore.QEvent.Resize,
+                                     QtCore.QEvent.Show)):
+                self.reposition()
+                self.raise_()
+            return False
+
+        def paintEvent(self, _event):
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+            text_color = _fc_density_legend_text_color()
+
+            top = 14
+            bottom = self.height() - 14
+            bar_x = 12
+            bar_width = 25
+            gradient = QtGui.QLinearGradient(0, top, 0, bottom)
+            gradient.setColorAt(0.00, QtGui.QColor(255, 255, 0))
+            gradient.setColorAt(0.25, QtGui.QColor(255, 0, 0))
+            gradient.setColorAt(0.50, QtGui.QColor(0, 0, 0))
+            gradient.setColorAt(0.75, QtGui.QColor(0, 0, 255))
+            gradient.setColorAt(1.00, QtGui.QColor(0, 255, 255))
+            painter.setBrush(QtGui.QBrush(gradient))
+            painter.setPen(QtGui.QPen(text_color, 1))
+            painter.drawRect(bar_x, top, bar_width, bottom - top)
+
+            painter.setPen(QtGui.QPen(text_color, 1))
+            label_x = bar_x + bar_width + 10
+            label_width = self.width() - label_x - 5
+            label_count = 5 if self.height() >= 130 else 3
+            value_step = ((self.maximum - self.minimum) /
+                          float(label_count - 1))
+            position_step = float(bottom - top) / float(label_count - 1)
+            labels = [(int(round(top + index * position_step)),
+                       self.maximum - index * value_step)
+                      for index in range(label_count)]
+            for position, value in labels:
+                painter.drawLine(bar_x + bar_width, position,
+                                 bar_x + bar_width + 6, position)
+                painter.drawText(
+                    QtCore.QRect(label_x, position - 10, label_width, 20),
+                    QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter,
+                    "{:.1e}".format(value))
+            painter.end()
+
+
+    _fc_density_legends = {}
+
+
+    def _fc_remove_density_legend(document_name):
+        legend = _fc_density_legends.pop(document_name, None)
+        if legend is not None:
+            try:
+                parent = legend.parentWidget()
+                if parent is not None:
+                    parent.removeEventFilter(legend)
+                legend.hide()
+                legend.deleteLater()
+            except RuntimeError:
+                pass
+
+
+    def _fc_update_density_legend(model, model_window=None,
+                                  remove_if_absent=False):
+        """Create or replace the density HUD associated with a document."""
+        if not model:
+            return
+        document_name = model.Document.Name
+        if not (hasattr(model, "DensityMinimum") and
+                hasattr(model, "DensityMaximum")):
+            if remove_if_absent:
+                _fc_remove_density_legend(document_name)
+            return
+
+        if model_window is None:
+            mdi_area = _fc_mdi_area()
+            model_window = (mdi_area.activeSubWindow()
+                            if mdi_area is not None else None)
+        if isinstance(model_window, _FCTextWindow):
+            model_window = model_window.modelWindow
+        if model_window is None:
+            return
+        try:
+            parent = model_window.widget()
+            if parent is None:
+                parent = model_window
+            _fc_remove_density_legend(document_name)
+            legend = _FCDensityLegend(
+                parent, model.DensityMinimum, model.DensityMaximum)
+            _fc_density_legends[document_name] = legend
+        except (AttributeError, RuntimeError, TypeError):
+            return
+
+
+    def _fc_set_density_no_shading(model, model_window=None):
+        """Select FreeCAD No Shading for a density model geometry window."""
+        if not model or not (hasattr(model, "DensityMinimum") and
+                             hasattr(model, "DensityMaximum")):
+            return
+        document_name = model.Document.Name
+        object_name = model.Name
+
+        def trigger_no_shading():
+            try:
+                document = FreeCAD.listDocuments().get(document_name)
+                current_model = (document.getObject(object_name)
+                                 if document is not None else None)
+                if current_model is None:
+                    return
+                if (FreeCAD.ActiveDocument is None or
+                        FreeCAD.ActiveDocument.Name != document_name):
+                    return
+                action = FreeCADGui.getMainWindow().findChild(
+                    _FCQAction, "Std_DrawStyleNoShading")
+                if action is not None:
+                    # Trigger the same QAction as View -> Draw Style ->
+                    # No Shading.  Unlike runCommand() with the child action
+                    # name, this reliably dispatches index 4 to Std_DrawStyle.
+                    action.trigger()
+                    if not action.isChecked():
+                        FreeCADGui.runCommand("Std_DrawStyle", 4)
+                else:
+                    # The parent command is registered even if a customized UI
+                    # has not instantiated the menu/toolbar child action.
+                    FreeCADGui.runCommand("Std_DrawStyle", 4)
+                FreeCADGui.activeDocument().activeView().redraw()
+            except (AttributeError, RuntimeError, TypeError):
+                FreeCAD.Console.PrintWarning(
+                    translate("EM",
+                              "Could not select No Shading for the imported "
+                              "FasterCap density view.\n"))
+
+        def activate_then_trigger():
+            try:
+                document = FreeCAD.listDocuments().get(document_name)
+                current_model = (document.getObject(object_name)
+                                 if document is not None else None)
+                if current_model is None:
+                    return
+                _fc_activate_model_view(current_model, model_window)
+                # Allow FreeCAD to finish changing its active MDI view before
+                # the QAction resolves the active GUI document.
+                QtCore.QTimer.singleShot(0, trigger_no_shading)
+            except (AttributeError, RuntimeError, TypeError):
+                return
+
+        # Text editors are opened during import and can still own the MDI focus
+        # in the current event turn.  Re-activate the captured geometry window
+        # after returning to Qt, then select its No Shading action.
+        QtCore.QTimer.singleShot(0, activate_then_trigger)
 
 
 def _fc_record(fields):
@@ -318,7 +521,8 @@ def _fc_activate_model_view(model, model_window=None):
 
 # Geometry import delegates parsing to the reader, then optionally opens source
 # text; document creation and GUI presentation remain separate concerns.
-def importFCInputFile(filename, viewText=False, model_window=None):
+def importFCInputFile(filename, viewText=False, model_window=None,
+                      update_density_legend=True):
     '''Import a FasterCap / FastCap file hierarchy into the active document.
 
        'filename' is the root list or geometry file to import.
@@ -377,6 +581,9 @@ def importFCInputFile(filename, viewText=False, model_window=None):
         # colors, including their individual transparency values.
         result.ViewObject.Transparency = 0
         _fc_activate_model_view(result, model_window)
+        if update_density_legend:
+            _fc_set_density_no_shading(result, model_window)
+            _fc_update_density_legend(result, model_window)
     return result
 
 
@@ -600,7 +807,8 @@ if FreeCAD.GuiUp:
                 for name in self.modelObjectNames:
                     if document.getObject(name) is not None:
                         document.removeObject(name)
-                result = importFCInputFile(self.rootPath, False, self.modelWindow)
+                result = importFCInputFile(self.rootPath, False, self.modelWindow,
+                                           False)
                 if not result:
                     document.abortTransaction()
                     document.recompute()
@@ -621,6 +829,8 @@ if FreeCAD.GuiUp:
                 except RuntimeError:
                     continue
             _fc_activate_model_view(result, self.modelWindow)
+            _fc_set_density_no_shading(result, self.modelWindow)
+            _fc_update_density_legend(result, self.modelWindow, True)
             FreeCAD.Console.PrintMessage(
                 translate("EM", "Reloaded FasterCap / FastCap model from ") +
                 self.rootPath + "\n")
@@ -890,10 +1100,12 @@ if FreeCAD.GuiUp:
                 "EM", "Import FasterCap / FastCap file"))
             try:
                 result = importFCInputFile(dialog.selectedFile(),
-                                           dialog.viewText(), model_window)
+                                           dialog.viewText(), model_window, False)
                 if result:
                     document.commitTransaction()
                     _fc_activate_model_view(result, model_window)
+                    _fc_set_density_no_shading(result, model_window)
+                    _fc_update_density_legend(result, model_window)
                 else:
                     document.abortTransaction()
             except Exception as error:

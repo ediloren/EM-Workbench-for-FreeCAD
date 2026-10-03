@@ -429,13 +429,13 @@ class _CommandFCPanelize:
         return FreeCAD.ActiveDocument is not None
 
     def Activated(self):
-        # The computational pipeline remains Qt-independent. This dialog only
-        # receives notifications at its safe phase boundaries, where it pumps
-        # events and can request a clean cancellation.
+        # The computational pipeline remains Qt-independent. This dialog receives
+        # sparse phase and hot-loop notifications, then rate-limits Qt event
+        # pumping so repaint and cancellation stay responsive at low overhead.
         started = time.perf_counter()
         dialog = QtWidgets.QProgressDialog(
             translate("EM", "Preparing panelization"),
-            translate("EM", "Cancel"), 0, 12,
+            translate("EM", "Cancel"), 0, 14,
             FreeCADGui.getMainWindow())
         dialog.setWindowTitle(translate(
             "EM", "FasterCap/FastCap panelization"))
@@ -446,16 +446,28 @@ class _CommandFCPanelize:
         dialog.show()
         progress_step = [0]
         previous_phase = [None]
+        last_event_pump = [0.0]
+        event_pump_interval = 0.125
 
         def progress(phase):
-            if phase != previous_phase[0]:
-                progress_step[0] = min(progress_step[0] + 1, dialog.maximum())
+            phase_changed = phase != previous_phase[0]
+            if phase_changed:
+                progress_step[0] = min(
+                    progress_step[0] + 1, dialog.maximum())
                 previous_phase[0] = phase
-            dialog.setLabelText(translate("EM", phase))
-            dialog.setValue(progress_step[0])
+                dialog.setLabelText(translate("EM", phase))
+                dialog.setValue(progress_step[0])
+            now = time.perf_counter()
+            if (not phase_changed and
+                    now - last_event_pump[0] < event_pump_interval):
+                return
             application = QtWidgets.QApplication.instance()
             if application is not None:
-                application.processEvents()
+                # Bound each event pump as well as its frequency.  This keeps
+                # repaint and Cancel responsive without measurably slowing the
+                # panel loops that issue the coarse checkpoints.
+                application.processEvents(QtCore.QEventLoop.AllEvents, 3)
+            last_event_pump[0] = time.perf_counter()
             if dialog.wasCanceled():
                 raise FCPanelizationCancelled("Panelization cancelled by user")
 
