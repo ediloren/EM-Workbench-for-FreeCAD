@@ -57,6 +57,16 @@ __dir__ = os.path.dirname(__file__)
 iconPath = os.path.join(__dir__, "Resources")
 
 
+class FCExportPanelizationErrors(FCPanelizationError):
+    """Raised when export needs explicit consent for panelization errors."""
+
+    def __init__(self, error_count):
+        self.error_count = int(error_count)
+        super().__init__(
+            "Panelization contains %d error(s); inspect the red panels and "
+            "diagnostics before exporting" % self.error_count)
+
+
 def _type_of(obj):
     return getattr(getattr(obj, "Proxy", None), "Type", None)
 
@@ -346,8 +356,8 @@ def _panelization_sources_touched(panelization):
 # Export warns about a stale signature but deliberately writes the frozen cache:
 # silently regenerating would make output differ from the inspected preview.
 def exportFCPanelization(document=None, folder=None, filename=None,
-                         overwrite=False):
-    """Export the current validated preview to .lst and geometry files."""
+                         overwrite=False, allow_errors=False):
+    """Export the current preview, optionally accepting diagnosed errors."""
     if document is None:
         document = FreeCAD.ActiveDocument
     if document is None:
@@ -366,12 +376,18 @@ def exportFCPanelization(document=None, folder=None, filename=None,
         FreeCAD.Console.PrintWarning(translate(
             "EM",
             "Warning: the FC model changed after panelization; exporting the existing static panelization.\n"))
+    if panelization.has_errors and not allow_errors:
+        error_count = sum(
+            item.severity == "error"
+            for item in panelization.diagnostics)
+        raise FCExportPanelizationErrors(error_count)
     if panelization.has_errors:
         error_count = sum(
             item.severity == "error"
             for item in panelization.diagnostics)
-        raise FCPanelizationError(
-            "Panelization contains %d error(s); inspect the red panels and diagnostics before exporting"
+        FreeCAD.Console.PrintWarning(translate(
+            "EM",
+            "Warning: exporting a panelization containing %d error(s).\n")
             % error_count)
 
     folder = folder or str(getattr(solver, "Folder", ""))
@@ -517,32 +533,61 @@ class _CommandFCExport:
 
     def Activated(self):
         document = FreeCAD.ActiveDocument
-        try:
-            exportFCPanelization(document)
-            return
-        except FileExistsError as error:
-            path = str(error)
-            dialog = QMessageBox()
-            dialog.setText(
-                translate("EM", "One or more export files already exist."))
-            dialog.setInformativeText(
-                translate("EM", "Overwrite the FasterCap/FastCap export set?\n")
-                + path)
-            dialog.setStandardButtons(
-                QMessageBox.Cancel | QMessageBox.Ok)
-            if dialog.exec_() != QMessageBox.Ok:
+        overwrite = False
+        allow_errors = False
+        while True:
+            try:
+                exportFCPanelization(
+                    document, overwrite=overwrite,
+                    allow_errors=allow_errors)
                 return
-        except Exception as error:
-            FreeCAD.Console.PrintError(
-                translate("EM", "FasterCap/FastCap export failed: %s\n")
-                % error)
-            return
-        try:
-            exportFCPanelization(document, overwrite=True)
-        except Exception as error:
-            FreeCAD.Console.PrintError(
-                translate("EM", "FasterCap/FastCap export failed: %s\n")
-                % error)
+            except FCExportPanelizationErrors as error:
+                if allow_errors:
+                    FreeCAD.Console.PrintError(
+                        translate(
+                            "EM", "FasterCap/FastCap export failed: %s\n")
+                        % error)
+                    return
+                dialog = QMessageBox()
+                dialog.setIcon(QMessageBox.Warning)
+                dialog.setText(translate(
+                    "EM", "The panelization contains %d error(s).")
+                    % error.error_count)
+                dialog.setInformativeText(translate(
+                    "EM",
+                    "The exported model may be incomplete or invalid. "
+                    "Do you want to export it anyway?"))
+                dialog.setStandardButtons(
+                    QMessageBox.No | QMessageBox.Yes)
+                dialog.setDefaultButton(QMessageBox.No)
+                if dialog.exec_() != QMessageBox.Yes:
+                    return
+                allow_errors = True
+            except FileExistsError as error:
+                if overwrite:
+                    FreeCAD.Console.PrintError(
+                        translate(
+                            "EM", "FasterCap/FastCap export failed: %s\n")
+                        % error)
+                    return
+                path = str(error)
+                dialog = QMessageBox()
+                dialog.setText(translate(
+                    "EM", "One or more export files already exist."))
+                dialog.setInformativeText(
+                    translate(
+                        "EM", "Overwrite the FasterCap/FastCap export set?\n")
+                    + path)
+                dialog.setStandardButtons(
+                    QMessageBox.Cancel | QMessageBox.Ok)
+                if dialog.exec_() != QMessageBox.Ok:
+                    return
+                overwrite = True
+            except Exception as error:
+                FreeCAD.Console.PrintError(
+                    translate("EM", "FasterCap/FastCap export failed: %s\n")
+                    % error)
+                return
 
 
 if FreeCAD.GuiUp:

@@ -3,66 +3,119 @@
 <head>
   <meta charset="utf-8">
   <title>FasterCap / FastCap workflow</title>
+  <style>
+    body { max-width: 980px; margin: 2em auto; padding: 0 1em; font-family: sans-serif; line-height: 1.45; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #aaa; padding: 0.45em; text-align: left; vertical-align: top; }
+    code { white-space: nowrap; }
+  </style>
 </head>
 <body>
-  <h1>Creating a 3D FasterCap / FastCap input model</h1>
-  <p>FC tools convert FreeCAD geometry into a frozen panel model that you inspect before export.</p>
-  <h2>Prepare the model and solver</h2>
-  <ol>
-    <li>Create a document and make the required solids or surfaces, for example a metal sphere inside a dielectric box. Use one consistent geometry scale. Decide which small gaps, films, holes and contacts are intentional; these can strongly affect capacitance.</li>
-    <li>Switch to the <strong>E.M.</strong> workbench. An <strong>FCSolver</strong> is created automatically when you create the first FC object if none exists; you can also create it with <strong>FasterCap / FastCap Solver</strong>. Use only one per document. On its Data tab select <strong>3D</strong>, the <strong>TargetSolver</strong>, geometry <strong>Units</strong>, and the background relative <strong>SpacePermittivity</strong>. Set the export <strong>Folder</strong> and <strong>Filename</strong>; the list filename receives <code>.lst</code> when necessary. FCSolver is a settings object, not a visible shape.</li>
-  </ol>
-  <h2>Define conductors</h2>
-  <ol start="3">
-    <li>Select a solid, shell, surface, or faces and click <strong>FCConductor</strong>. Use one FCConductor for each electrical potential. It may contain touching, overlapping, or disconnected Base objects; the panelizer forms their exposed boundary.</li>
-    <li>To extend a conductor, select that FCConductor together with more geometry and click <strong>FCConductor</strong> again. Set <strong>DefaultPermittivity</strong> to the surrounding relative permittivity used where no dielectric interface provides a more specific value.</li>
-  </ol>
-  <h2>Define dielectric regions and interfaces</h2>
-  <ol start="5">
-    <li>Select the boundary faces or a dielectric solid and click <strong>FCDielectric</strong>. A selected solid contributes its boundary; selected open faces define only those interfaces. Extend an existing dielectric by selecting it with additional geometry and clicking the command again.</li>
-    <li>Set <strong>InnerPermittivity</strong> and <strong>OuterPermittivity</strong>. Select the FCDielectric to see arrows: the arrow side is Outer and the opposite side is Inner. Solid boundaries are oriented outward, leaving the solid material on the Inner side. For open interfaces, use <strong>Orientation: Reversed</strong> if the source normals point the wrong way. Arrows appear only while selected, both before and after panelization; tessellated surfaces use a distributed sample of arrows.</li>
-  </ol>
-  <h2>How conductors and dielectrics may be arranged</h2>
-  <p>An FC object assigns electrical meaning to its Base geometry. Use these rules when deciding whether CAD bodies belong to one object or several:</p>
+  <h1>Creating FasterCap and FastCap models</h1>
+  <p>The FC tools convert FreeCAD geometry into a panel model for capacitance extraction. The usual workflow is: configure the solver, assign geometry to conductors and dielectric interfaces, create and inspect the panelization, then export the solver files.</p>
+
+  <h2>1. Prepare the CAD model</h2>
   <ul>
-    <li><strong>Parts of one conductor:</strong> touching or overlapping solids at the same potential should belong to the same FCConductor. They are combined transiently into one exposed boundary. Disconnected pieces may also share an FCConductor when they are intentionally at the same potential.</li>
-    <li><strong>Different conductors:</strong> conductors at different potentials may be separated by background space or dielectric, and one may sit inside a cavity or enclosure formed by another. They must not occupy the same volume or share surface area. A physical edge or point contact would be a short circuit, so either combine the pieces into one FCConductor or introduce the intended gap or dielectric separation.</li>
-    <li><strong>Conductors embedded in dielectrics:</strong> a solid conductor may be partly or wholly inside a dielectric solid; the CAD volumes may overlap because the conductor replaces the dielectric material it occupies. No preliminary Boolean cut is required. The conductor surface is split where it crosses a dielectric boundary, and each portion receives the permittivity of the material immediately outside it. Dielectric boundary portions inside the conductor are removed from the analysis geometry, not from the original CAD object.</li>
-    <li><strong>Conductor–dielectric contact:</strong> a solid conductor may touch or have a coincident face with a dielectric boundary. The conductor panel replaces the coincident dielectric panel so solver panels do not overlap. A zero-thickness conductor surface is different: it may lie inside one uniform material, but it cannot coincide with a dielectric discontinuity because the required FastCap B element is not supported.</li>
-    <li><strong>Nested dielectrics:</strong> one dielectric solid may be fully embedded in another. At a point contained by several nested volumes, the smallest enclosing region supplies the local permittivity. Give every boundary the correct Inner/Outer values and inspect its arrows.</li>
-    <li><strong>Touching or overlapping dielectrics:</strong> touching or intersecting solids in the same FCDielectric are allowed and combined transiently. Equivalent coincident interfaces are merged. Distinct regions with incompatible coincident interfaces or partially overlapping volumes of different permittivities are ambiguous and diagnosed. Prefer nested volumes, clean shared boundaries, or Boolean-partitioned regions.</li>
-    <li><strong>Open interfaces:</strong> an FCDielectric made from open faces describes only those interfaces; unlike a dielectric solid, it does not classify an enclosing volume away from the faces. Use it for a known material boundary, set both side permittivities explicitly, and avoid defining the same interface twice. Exact intersections and T-junctions are split into aligned seams, but GeometryTolerance does not close real gaps.</li>
+    <li>Use one consistent geometric scale and choose the same scale in the FCSolver <strong>Units</strong> property.</li>
+    <li>Decide which small gaps, coatings, holes and contacts are physically intentional. They can substantially affect capacitance.</li>
+    <li>Prefer valid, clean FreeCAD solids or faces. Models imported from STEP may need repair if they contain invalid faces, duplicated surfaces or very small edges.</li>
+    <li>You do not normally need to cut a conductor out of a surrounding dielectric. The panelization can classify a solid conductor embedded in a dielectric region.</li>
   </ul>
-  <h2>Optional defeaturing: decide what may be approximated</h2>
-  <p>Defeaturing is <strong>off by default</strong>. It changes only temporary analysis shapes, never the Base objects, their placements, or their parametric history. Boundary extraction, solid classification, material splitting and meshing all use the same prepared geometry. The exported model is therefore an approximation when these controls are enabled.</p>
+
+  <h2>2. Configure FCSolver</h2>
+  <p>An <strong>FCSolver</strong> is created automatically with the first FC object if the document does not already contain one. You can also create it with <strong>FasterCap / FastCap Solver</strong>. Use one FCSolver per document.</p>
+  <table>
+    <thead>
+      <tr><th>Property</th><th>User choice</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Dimension</strong></td><td>Select <strong>3D</strong> for ordinary surface-panel models or <strong>2D</strong> for a FasterCap cross-section model. See the dedicated 2D section below.</td></tr>
+      <tr><td><strong>TargetSolver</strong></td><td>Select <strong>FasterCap</strong> or <strong>FastCap</strong>. Two-dimensional models require FasterCap.</td></tr>
+      <tr><td><strong>Units</strong></td><td>Select the unit represented by the FreeCAD coordinates. Exported coordinates are converted accordingly.</td></tr>
+      <tr><td><strong>SpacePermittivity</strong></td><td>Relative permittivity of the background material surrounding regions for which no more specific dielectric applies.</td></tr>
+      <tr><td><strong>GeometryTolerance</strong></td><td>Numerical tolerance used to compare and classify geometry. Keep the default unless the CAD model has a known numerical-scale problem. This setting is not a gap-closing or defeaturing control.</td></tr>
+      <tr><td><strong>ReferenceConductor</strong></td><td>Required in 2D. Select the FCConductor that represents the zero-potential reference.</td></tr>
+      <tr><td><strong>MaxPanelSize</strong></td><td>Maximum panel edge length for FastCap. It does not control FasterCap panel size.</td></tr>
+      <tr><td><strong>Folder / Filename</strong></td><td>Destination folder and list filename. The <code>.lst</code> extension is added when needed.</td></tr>
+    </tbody>
+  </table>
+  <p>The remaining FasterCap and FastCap properties correspond to command-line solver controls. Change them only when you want to alter the solver's refinement, accuracy or iteration behavior; they do not change the CAD geometry.</p>
+
+  <h2>3. Define conductors</h2>
   <ol>
-    <li>On FCSolver, enable <strong>DefeaturingEnabled</strong>. Start with the default <strong>DefeaturingRelativeSize = 0.002</strong> and <strong>DefeaturingRelativeDeviation = 0.002</strong> only if a 0.2% component-scale approximation is acceptable for your model.</li>
-    <li><strong>Relative Size</strong> identifies small-feature/contact candidates. Its reference length is the original bounding-box diagonal of each source solid or explicit shell/face, recursively separating compound children; it is not the entire document size. For a 10 mm cube, 0.002 corresponds to about 0.0346 mm. A small disconnected component does not inherit the size of a distant large body. Relative Size and Relative Deviation are local decimal-text fields: their entered precision is displayed without changing FreeCAD's global Units/Decimals preference.</li>
-    <li><strong>Relative Deviation</strong> limits cumulative boundary movement using the same reference length. Translation and uniform contraction have geometric bounds. OCC small-face removal and local interface reconstruction use bidirectional sampled boundary-distance audits plus validity and volume checks; reconstruction also checks the selected analytic support's mismatch. The sampled audit is approximate, not a mathematical certificate. Each accepted operation consumes the remaining movement budget. Zero deviation prevents geometry edits.</li>
-    <li>Choose <strong>DefeaturingPolicy</strong>. <strong>Align contacts</strong> permits small solid-feature removal, safe translation of parallel planar contacts, and local BREP reconstruction of nearby planar (including slightly tilted), cylindrical and spherical interfaces. <strong>Align and regularize</strong> also permits bounded contraction of a whole connected curved solid to open tangent or near-tangent contacts. Contraction can change an isolated tangency into a clearance and changes the whole solid slightly; inspect whether that is physically acceptable.</li>
-    <li>On each FCConductor or FCDielectric, choose <strong>Defeaturing: Inherit</strong>, <strong>Disabled</strong>, or <strong>Custom</strong>. Inherit uses the solver controls; Disabled fixes that object's geometry; Custom uses its own size, deviation and policy even when the solver default is off. Object numeric controls are read-only unless Custom is selected.</li>
-    <li><strong>DefeaturingPriority</strong> selects the reference for alignment: higher priority stays fixed relative to lower priority. Disabled objects are always fixed; ties favour components with existing positive-area interfaces, then conductors and document order. For local repairs at equal priority, the other enabled participant may be repaired if that preserves existing contacts. An enabled neighbour may still change relative to a disabled object. Disable defeaturing on all participants when an intentional gap/contact must be preserved exactly. Priority does not prohibit curved-solid contraction; use Disabled or Align contacts for that.</li>
+    <li>Select a solid, shell, surface or one or more faces and click <strong>FCConductor</strong>.</li>
+    <li>Use a separate FCConductor for every independent electrical potential. Disconnected pieces may belong to one FCConductor when they are intentionally at the same potential.</li>
+    <li>To add geometry to an existing conductor, select that FCConductor together with the additional geometry and click <strong>FCConductor</strong> again.</li>
+    <li>Set <strong>DefaultPermittivity</strong> to the relative permittivity immediately outside conductor portions not covered by a more specific dielectric region.</li>
   </ol>
-  <p>The hybrid repair operates on copied, trimmed BREP faces, including faces of imported or Boolean-generated shapes; it does not edit primitive dimensions or require parametric history. Native offset collars and Boolean splits replace a selected analytic support and retrim adjacent faces. A local fuzzy General Fuse is a fallback, particularly for open faces, but increased kernel tolerance alone does not count as a repair: the resulting edges must agree with their supporting surfaces. A selected face may change over its full extent, not just the overlap footprint. Relative Size gates the complete face-support mismatch; it is not applied as a document-wide Boolean tolerance.</p>
-  <p>The workbench reports accepted alignments, local repairs, feature removals and curved-contact regularization as warnings for review. Existing positive-area contact footprints must survive; it will not automatically short distinct FCConductors or introduce new overlap of incompatible dielectric materials. Ambiguous alignments, unsupported features, failed kernel operations and exceeded movement budgets leave the affected candidate unchanged and produce warnings where detected. Small patches remaining after material splitting are also reported; none are simply discarded from the mesh. Collapsing a thin coating can change which conductor faces border dielectric: review the prepared geometry and permittivity display, not only the panel count.</p>
-  <p>This is a bounded heuristic, not universal CAD healing. Local support reconstruction currently recognizes planes, cylinders and spheres; it cannot infer electrical intent, repair arbitrary splines, cones, complex trims or non-convex cases, or automatically reconcile every open-surface contact. Failed fuzzy/reconstruction attempts are retained for manual repair rather than accepted as high-tolerance geometry. Some ambiguous or narrow features can remain. Inspect the preview and diagnostics, and repair the CAD model manually where necessary.</p>
-  <p>For the supplied offset-cube example, alignment removes the 0.001 mm strip. For the sphere/box example, the original intersection contains exact tangent cusps: merely refining the mesh cannot eliminate their acute angles. Regularization opens a small clearance. Compare with the original CAD and vary the controls to assess whether the resulting capacitance model is acceptable.</p>
-  <p>To retain a genuine small feature, use Disabled or smaller custom thresholds. Curved meshing remains controlled separately by PanelCurvatureTolerance. A narrow but well-shaped region can require many panels; an exact acute corner or tangent cusp may make triangles above 15 degrees impossible without changing the geometry. Smaller curvature tolerance is not a cure for such corners. Bad-triangle checks remain active and export is blocked by errors.</p>
-  <p><strong>GeometryTolerance</strong> remains a numerical comparison/classification tolerance. Do not increase it to request defeaturing or to conceal real gaps. Defeaturing uses local candidate filtering and bounded passes, but kernel operations and subsequent meshing can still be expensive. Removing tiny strips often reduces panel count greatly; opening a curved clearance can still require a dense mesh.</p>
-  <h2>Create and inspect the panelization</h2>
-  <ol start="7">
-    <li>Before panelization, each FC object displays its live Base geometry beneath it in the tree. Toggling the FC object's visibility shows or hides all its Bases. Click <strong>Create FC Panelization</strong> to process all FC objects, including optional defeaturing. Bases are then hidden and FC objects show the frozen tessellation. You can independently show a Base again to compare the approximation.</li>
-    <li>Read the Report view diagnostics and inspect seams, curves, contacts, material boundaries and red panels. Correct every error and review approximation warnings. Valid panels use the FC object's <strong>Shape Appearance</strong> and transparency; only individually identified problematic panels use <strong>Bad Panel Color</strong>. Non-manifold junctions are not automatically warnings, since legitimate material interfaces can meet there.</li>
-    <li>Adjust <strong>PanelCurvatureTolerance</strong> for curved surfaces; it is an approximate relative deviation, sagitta divided by local minimum principal radius. The Netgen segment setting follows approximately N = 1 / sqrt(8 × tolerance). Smaller values usually increase panel count. For FastCap, <strong>MaxPanelSize</strong> also limits panel edges. Connected surfaces are meshed together to retain shared seams, not independently face by face.</li>
-    <li>The progress dialog shows the current phase. <strong>Cancel</strong> is checked between processing steps and periodically during panel creation, grouping, and validation; an ongoing OCC or Netgen call must still return before cancellation can take effect. The final Report message includes generated panel count, errors, warnings and total elapsed seconds, including geometry preparation, meshing, validation and preview publication. Cancellation/failure also reports elapsed time.</li>
-    <li>Panelize again after geometry, Base, material, curvature or defeaturing changes. Edits do not update the frozen preview. FC visibility now controls the panelization and its associated display aids; Base visibility remains independently available. Save the CAD document to retain the model and settings. Panels are transient: after reopening, panelize again.</li>
+  <p>Different FCConductors must not occupy the same physical volume or share a surface. If two metal parts make electrical contact, assign them to the same FCConductor. If they represent different potentials, provide the intended physical separation.</p>
+
+  <h2>4. Define dielectric regions and interfaces</h2>
+  <ol>
+    <li>Select a dielectric solid or the faces describing a dielectric boundary and click <strong>FCDielectric</strong>.</li>
+    <li>Set <strong>InnerPermittivity</strong> and <strong>OuterPermittivity</strong>.</li>
+    <li>Select the FCDielectric and inspect its arrows. The arrow points toward the Outer side; the opposite side is Inner. For a solid, the enclosed material is normally on the Inner side. For an open interface, set <strong>Orientation</strong> to <strong>Reversed</strong> if the arrows point the wrong way.</li>
+    <li>To add geometry to an existing dielectric, select the FCDielectric together with the additional geometry and click <strong>FCDielectric</strong> again.</li>
   </ol>
-  <h2>Export</h2>
-  <ol start="9">
-    <li>When the preview has no errors and its warnings are understood, click <strong>Export FasterCap / FastCap</strong>. Confirm overwrite if files already exist. The selected folder receives the <code>.lst</code> file and its referenced geometry files. FasterCap output includes FC-object appearance colors and transparency, converted to the output format's alpha convention.</li>
-    <li>Export always writes the last panelization you inspected. If the model changed afterward, the command warns and still exports that frozen snapshot; panelize again first when the changes must be included.</li>
+  <p>A conductor may be partly or completely embedded in a dielectric solid. A solid conductor may also touch a dielectric boundary. Do not define the same dielectric interface more than once, and avoid partially overlapping dielectric volumes with incompatible permittivities.</p>
+  <p>Open faces describe only the selected interfaces; they do not define the material throughout an enclosed volume. Use them when the interface and its two material sides are known explicitly.</p>
+
+  <h2>5. Two-dimensional FasterCap models</h2>
+  <p>A 2D model represents a cross-section that is assumed to extend uniformly perpendicular to the drawing plane. It is useful for transmission-line and other long, constant-cross-section structures.</p>
+  <ol>
+    <li>Set FCSolver <strong>Dimension</strong> to <strong>2D</strong> and <strong>TargetSolver</strong> to <strong>FasterCap</strong>. FastCap export does not support the FasterCap 2D segment format.</li>
+    <li>Create the cross-section in the global <strong>X/Y plane</strong>. Use planar faces whose boundary edges describe the conductor and dielectric contours. All meaningful contours should use the same Z level because Z is omitted from the exported 2D coordinates.</li>
+    <li>Do not use the side faces of extruded solids as the 2D model. Edges that change in Z are rejected, and geometry on different Z planes would project onto the same X/Y model.</li>
+    <li>Create one FCConductor for each electrical potential and assign the contour face or faces to it.</li>
+    <li>Create FCDielectric objects for material boundaries and verify Inner/Outer orientation with the arrows. The face normal and boundary direction determine the side of each exported segment, so reversing an incorrectly oriented interface is important.</li>
+    <li>Set FCSolver <strong>ReferenceConductor</strong> to the conductor that represents zero potential. A valid reference conductor is mandatory for 2D panelization.</li>
+    <li>Create the panelization and inspect the segment contours. Correct open contours, unintended duplicate edges, crossings and collapsed segments before export.</li>
   </ol>
-  <h2>Validation examples</h2>
-  <p>The repository's <code>Test</code> folder contains the two original defeaturing examples and additional source models for rotated contacts, protected conductor gaps, cylinder tangency, and a small fillet with a disconnected miniature body. Open a model, inspect its solver/object settings, and run Create FC Panelization. For the two original files, enable solver defeaturing first; they have deliberately not been overwritten. The test runner writes <code>.validation.json</code> results, with separate failure logs when an assertion fails.</p>
+  <p><strong>PanelCurvatureTolerance</strong> controls how finely curved contour edges are divided. Smaller values preserve curves more closely but create more segments. Straight edges normally remain single segments. The 3D FastCap <strong>MaxPanelSize</strong> control is not a FasterCap 2D discretization control.</p>
+
+  <h2>6. Optional defeaturing</h2>
+  <p>Defeaturing is off by default. When enabled, it creates an approximate analysis geometry while leaving the original FreeCAD Base geometry unchanged. Use it only when the permitted geometric change is acceptable for the required capacitance accuracy.</p>
+  <ol>
+    <li>Enable <strong>DefeaturingEnabled</strong> on FCSolver to apply the solver defaults.</li>
+    <li><strong>DefeaturingRelativeSize</strong> selects features and near-contact situations small enough to consider. The value is relative to the size of the individual source component, not the complete document.</li>
+    <li><strong>DefeaturingRelativeDeviation</strong> limits the accepted movement or shape change relative to that component size. A value of zero prevents geometry changes.</li>
+    <li>Choose <strong>Align contacts</strong> when small contact mismatches may be aligned. Choose <strong>Align and regularize</strong> when a slight change to curved geometry is also acceptable to remove difficult tangent or near-tangent contacts.</li>
+    <li>For each FC object, <strong>Defeaturing: Inherit</strong> uses the solver settings, <strong>Disabled</strong> protects that object's geometry, and <strong>Custom</strong> enables its own controls.</li>
+    <li><strong>DefeaturingPriority</strong> helps choose which participant remains fixed during contact alignment. Higher-priority and Disabled objects are preferred as references.</li>
+  </ol>
+  <p>Defeaturing is intended for small, ordinary CAD imperfections. It may not resolve complex imported surfaces, arbitrary splines, non-convex contacts or severely invalid geometry. Review every defeaturing warning and compare the panelized result with the original model. Disable it or reduce the limits when a small gap, coating or feature is physically important.</p>
+
+  <h2>7. Control discretization</h2>
+  <p>Each FCConductor and FCDielectric has a <strong>PanelCurvatureTolerance</strong>. Smaller values follow curved geometry more closely and generally create more panels; larger values give a coarser representation. A coarse mesh can be useful for FasterCap, but it must still represent the geometry well enough for the required accuracy.</p>
+  <p>For FastCap 3D models, FCSolver <strong>MaxPanelSize</strong> additionally limits panel edge length. Very small features, narrow gaps, sharp corners and tangent contacts can force a dense mesh regardless of the chosen curvature tolerance.</p>
+
+  <h2>8. Create and inspect the panelization</h2>
+  <ol>
+    <li>Click <strong>Create FC Panelization</strong>. A progress dialog shows the current phase and provides a <strong>Cancel</strong> button. Cancellation may wait briefly for the current geometry or meshing operation to finish.</li>
+    <li>After successful panelization, the source objects are hidden and the FC objects display the frozen panels or 2D segments. You can show a source object again to compare it with the analysis model.</li>
+    <li>Read the Report view. Correct errors and review warnings, especially those concerning contacts, overlaps, gaps, orientation, defeaturing and problematic panels.</li>
+    <li>Inspect material boundaries, seams and curved areas visually. Red panels identify individual panels for which a problem was detected.</li>
+    <li>Panelize again after changing geometry, Base assignments, material values, discretization or defeaturing settings. The displayed panelization does not update automatically.</li>
+  </ol>
+  <p>The panelization is transient. The CAD model and its settings are saved in the FreeCAD document, but the panels must be recreated after reopening it.</p>
+
+  <h2>9. Export</h2>
+  <ol>
+    <li>Set the destination <strong>Folder</strong> and <strong>Filename</strong> on FCSolver.</li>
+    <li>Click <strong>Export FasterCap / FastCap</strong>. The folder receives the list file and its referenced geometry files.</li>
+    <li>If files already exist, confirm whether they may be overwritten.</li>
+    <li>If the panelization contains errors, the workbench warns that the exported model may be incomplete or invalid and asks whether to continue. Exporting does not make those errors harmless.</li>
+  </ol>
+  <p>Export writes the last panelization that you inspected. If the CAD model or FC properties changed afterward, the workbench warns that the snapshot is stale. Panelize again when the changes must be included.</p>
+
+  <h2>10. Troubleshooting checklist</h2>
+  <ul>
+    <li><strong>Missing panels:</strong> check Base assignments, source visibility, invalid faces and Report view diagnostics.</li>
+    <li><strong>Wrong dielectric side:</strong> select the FCDielectric, inspect its arrows and change Orientation if necessary.</li>
+    <li><strong>Unexpected conductor permittivity:</strong> verify dielectric volumes and the conductor's DefaultPermittivity.</li>
+    <li><strong>Too many panels:</strong> use a larger PanelCurvatureTolerance, simplify genuinely irrelevant small features, or enable carefully bounded defeaturing.</li>
+    <li><strong>Bad triangles or failed curved contacts:</strong> repair the source CAD, remove exact tangencies when physically permissible, or use a controlled defeaturing setting.</li>
+    <li><strong>2D validation errors:</strong> verify that every contour lies in the X/Y plane, no edge changes in Z, and the ReferenceConductor is set.</li>
+  </ul>
 </body>
 </html>

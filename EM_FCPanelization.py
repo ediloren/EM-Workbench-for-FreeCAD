@@ -25,6 +25,8 @@ creates one document object per panel and never runs from FeaturePython execute.
 # - Each patch is classified on both sides of its oriented surface normal.
 # - Coincident surfaces are resolved by electromagnetic, not merely geometric,
 #   equivalence; protected split edges preserve real material transitions.
+# - Failed splits or unresolved overlaps/crossings trigger one bounded,
+#   transactional reconstruction of the affected source-face group only.
 # - FasterCap 3D, FastCap 3D, and 2D use distinct discretization constraints.
 # - Dielectric references come from validated panel sides and compatible panels
 #   are grouped only after material-side resolution.
@@ -76,6 +78,13 @@ FCPANEL_GROUP_PANEL_BLOCK = 2048
 # for both small models and meshes with hundreds of thousands of panels.
 FCPANEL_PROGRESS_STRIDE = 256
 
+# Recovery is exceptional, not a second global Boolean pass. Bound the input
+# before calling OCC, and the retained history afterwards; never retry a group.
+# A native Boolean cannot be interrupted or given a hard wall-clock limit.
+FCPANEL_RECOVERY_MAX_SOURCES = 128
+FCPANEL_RECOVERY_MAX_INPUTS = 512
+FCPANEL_RECOVERY_MAX_FRAGMENTS = 2048
+
 FC_ELEMENT_TRIANGLE = "T"
 FC_ELEMENT_QUAD = "Q"
 FC_ELEMENT_SEGMENT = "S"
@@ -125,6 +134,7 @@ class FCSurfacePatch:
     removed: bool = False
     problem_codes: List[str] = field(default_factory=list)
     attribution_shape: Any = None
+    shared_topology_group: Any = None
 
 
 @dataclass
@@ -435,6 +445,37 @@ def _append_splitters(splitters, record, edges):
     splitters.setdefault(id(record), [record, []])[1].extend(edges)
 
 
+class _SurfaceRecovery:
+    """Cheap source-face connectivity collected by operations already needed.
+
+    Union/find retains O(faces) identities, not all interacting pairs or OCC
+    shapes. Include conformal neighbors: rebuilding only the face that failed
+    can leave an unsplit neighbor, or omit a previously removed contact owner.
+    """
+
+    def __init__(self):
+        self.parents = {}
+        self.failed_sources = set()
+
+    def root(self, key):
+        parent = self.parents
+        while key in parent and parent[key] != key:
+            parent[key] = parent.get(parent[key], parent[key])
+            key = parent[key]
+        return key
+
+    def join(self, first, second):
+        first_root, second_root = self.root(id(first)), self.root(id(second))
+        if first_root != second_root:
+            self.parents[max(first_root, second_root)] = min(first_root, second_root)
+
+    def mark(self, first, second=None):
+        self.failed_sources.add(id(first))
+        if second is not None:
+            self.join(first, second)
+            self.failed_sources.add(id(second))
+
+
 # Exact-interaction discovery ---------------------------------------------
 # Common faces record area overlap; section edges record crossings or contacts.
 # Both retain the participating source faces for later diagnostics.
@@ -489,7 +530,7 @@ def _face_pair_records(first_component, second_component, tolerance):
 
 # Inspect entity pairs and self-components, collecting splitters symmetrically
 # so every participating source face receives the same intersection boundary.
-def _collect_surface_interactions(model):
+def _collect_surface_interactions(model, recovery=None):
     """Accumulate section/overlap splitters without splitting any face yet."""
     tolerance = model.context.geometry_tolerance
     diagnostics = []
@@ -521,6 +562,8 @@ def _collect_surface_interactions(model):
             common_faces = _common_faces(
                 first, second, tolerance, diagnostics, failed_records,
                 first_component, second_component)
+            if recovery is not None and (conformal_edge or common_faces):
+                recovery.join(first, second)
             if common_faces:
                 common_area = sum(float(face.Area) for face in common_faces)
                 coincidences.append((first, second, common_area))
@@ -550,6 +593,8 @@ def _collect_surface_interactions(model):
                 first, second, tolerance, diagnostics, failed_records,
                 first_component, second_component)
             if edges:
+                if recovery is not None:
+                    recovery.join(first, second)
                 _append_splitters(splitters, first, edges)
                 _append_splitters(splitters, second, edges)
 
@@ -711,7 +756,7 @@ def _align_patch_face(piece, source):
 
 # Convert every source face into one or more provenance-preserving patches.
 # Failed splits remain diagnosable instead of disappearing from the model.
-def _build_split_patches(model, splitters, failed_records):
+def _build_split_patches(model, splitters, failed_records, recovery=None):
     diagnostics = []
     patches = []
     tolerance = model.context.geometry_tolerance
@@ -722,6 +767,8 @@ def _build_split_patches(model, splitters, failed_records):
                 pieces, error = _split_face_once(
                     source.shape, edges, tolerance)
                 if error is not None:
+                    if recovery is not None:
+                        recovery.mark(source)
                     diagnostics.append(_diag(
                         FC_DIAGNOSTIC_ERROR, "surface_split_failed",
                         "Could not split a source face once with its accumulated edges: %s"
@@ -1101,7 +1148,10 @@ def _diagnose_tiny_gaps(patches, tolerance):
 
 # Apply coincident-surface actions before discretization so duplicate solver
 # elements cannot be hidden by later panel-level validation.
-def _resolve_coincident_and_validate_surfaces(patches, tolerance):
+def _resolve_coincident_and_validate_surfaces(patches, tolerance,
+                                             recovery=None,
+                                             shared_topology=False,
+                                             coincidences=None):
     diagnostics = []
     active = [patch for patch in patches if not patch.removed]
     index = FCBoundingBoxIndex(active)
@@ -1110,6 +1160,16 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
     boundary_cache = {}
     for first, second in index.candidate_pairs(tolerance=tolerance):
         if first.removed or second.removed:
+            continue
+        # Joint fragmentation explicitly returns the same face to all its
+        # owners, possibly with opposite orientation. Do not reconstruct that
+        # coincidence with another curved Boolean and a strict area comparison.
+        if shared_topology and _same_shape(first.shape, second.shape):
+            area = float(first.shape.Area)
+            if coincidences is None:
+                _coincident_patch_action(first, second, area, tolerance, diagnostics)
+            else:
+                coincidences.append((first, second, area))
             continue
         try:
             common = first.shape.common(second.shape, tolerance)
@@ -1130,6 +1190,8 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
                 abs(float(first.shape.Area) - area) <= area_tolerance and
                 abs(float(second.shape.Area) - area) <= area_tolerance)
             if not complete_overlap:
+                if recovery is not None:
+                    recovery.mark(first.source_face, second.source_face)
                 diagnostics.append(_diag(
                     FC_DIAGNOSTIC_ERROR, "positive_area_overlap",
                     "Resolved patches retain a partial positive-area overlap",
@@ -1139,14 +1201,21 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
                         "area": area}))
                 second.problem_codes.append("positive_area_overlap")
                 continue
-            _coincident_patch_action(
-                first, second, area, tolerance, diagnostics)
+            if coincidences is None:
+                _coincident_patch_action(first, second, area, tolerance, diagnostics)
+            else:
+                coincidences.append((first, second, area))
             continue
         try:
             sections = list(
                 getattr(first.shape.section(
                     second.shape, tolerance), "Edges", []))
-        except (AttributeError, RuntimeError, TypeError, ValueError):
+        except (AttributeError, RuntimeError, TypeError, ValueError) as error:
+            if shared_topology:
+                diagnostics.append(_diag(
+                    FC_DIAGNOSTIC_ERROR, "surface_validation_failed",
+                    "OCC could not validate a reconstructed section: %s" % error,
+                    first))
             sections = []
         crossing = []
         for edge in sections:
@@ -1168,6 +1237,8 @@ def _resolve_coincident_and_validate_surfaces(patches, tolerance):
                 crossing.append(
                     (first_deviation, second_deviation, boundary_tolerance))
         if crossing:
+            if recovery is not None:
+                recovery.mark(first.source_face, second.source_face)
             diagnostics.append(_diag(
                 FC_DIAGNOSTIC_ERROR, "remaining_surface_crossing",
                 "Resolved surfaces still cross away from conformal boundaries",
@@ -1289,8 +1360,17 @@ def _group_needs_fragmentation(group, tolerance):
 # every intersection on every participant and its history maps the resulting
 # faces back to each input patch.  This supports open surfaces and preserves
 # conductor/dielectric interfaces that an indiscriminate solid fuse would erase.
-def _fragment_patch_group(group, tolerance, diagnostics):
-    if len(group) < 2 or not _group_needs_fragmentation(group, tolerance):
+def _fragment_patch_group(group, tolerance, diagnostics, recovery=False):
+    if not recovery and group:
+        shared = group[0].shared_topology_group
+        if shared is not None and all(
+                patch.shared_topology_group is shared for patch in group):
+            # Recovery already built and audited this complete arrangement.
+            # Repeating General Fuse costs time and can reintroduce periodic
+            # trimming failures. Mixed groups still take the normal path.
+            return list(group)
+    if not recovery and (len(group) < 2 or
+                         not _group_needs_fragmentation(group, tolerance)):
         return list(group)
 
     # Only interacting groups need this OCC workaround. An isolated sphere
@@ -1298,6 +1378,8 @@ def _fragment_patch_group(group, tolerance, diagnostics):
     group = _split_periodic_mesh_patches(group, tolerance)
 
     try:
+        if recovery and len(group) > FCPANEL_RECOVERY_MAX_INPUTS:
+            raise RuntimeError("Recovery input-face limit exceeded")
         _result, history = group[0].shape.generalFuse(
             [patch.shape for patch in group[1:]], tolerance)
         history = list(history)
@@ -1322,9 +1404,19 @@ def _fragment_patch_group(group, tolerance, diagnostics):
             try:
                 if float(face.Area) <= area_tolerance:
                     continue
+                if recovery and (not face.isValid() or
+                        len(fragments) + len(source_fragments) >=
+                        FCPANEL_RECOVERY_MAX_FRAGMENTS):
+                    raise RuntimeError("Invalid or excessive recovery fragments")
                 source_fragments.append(_fragment_face_record(
                     source, face, len(fragments) + len(source_fragments)))
-            except (AttributeError, RuntimeError, TypeError, ValueError):
+            except (AttributeError, RuntimeError, TypeError, ValueError) as error:
+                if recovery:
+                    diagnostics.append(_diag(
+                        FC_DIAGNOSTIC_ERROR, "surface_fragmentation_incomplete",
+                        "Could not retain a valid recovery fragment: %s" % error,
+                        source))
+                    return list(group)
                 continue
 
         source_area = float(getattr(source.shape, "Area", 0.0))
@@ -1346,6 +1438,11 @@ def _fragment_patch_group(group, tolerance, diagnostics):
                     "fragment_area": mapped_area}))
             return list(group)
         fragments.extend(source_fragments)
+
+    if recovery:
+        # Multiple source owners are expected here; material classification
+        # and _coincident_patch_action resolve them before anything is meshed.
+        return fragments
 
     # A face may legitimately appear in more than one history list only for a
     # coincident input.  Such inputs should already have been resolved; keeping
@@ -1371,6 +1468,137 @@ def _fragment_patch_group(group, tolerance, diagnostics):
                 "fragment_count": len(conflicts),
                 "objects": objects}))
     return fragments
+
+
+def _recover_surface_groups(model, patches, recovery, diagnostics,
+                            failed_records=(), progress=None):
+    """Transactionally replace only failed source-face interaction groups.
+
+    The first resolution pass is provisional for these groups. Rebuild from
+    prepared sources, including removed patches, and classify against the
+    unchanged original solids. Commit only complete, valid, noncrossing output;
+    retain genuine material/conductor errors and leave failed attempts intact.
+    Healthy runs do not build another index, copy patches, or call OCC here.
+    """
+    if not recovery.failed_sources:
+        return patches, diagnostics
+    tolerance = model.context.geometry_tolerance
+    roots = {recovery.root(key) for key in recovery.failed_sources}
+    groups = {}
+    for entity in model.entities:
+        for component in entity.components:
+            for source in component.faces:
+                root = recovery.root(id(source))
+                if root in roots:
+                    groups.setdefault(root, []).append((entity, component, source))
+
+    replacements = {}
+    replaced_locations = set()
+    new_diagnostics = []
+    for records in groups.values():
+        entity, component, source = records[0]
+        location = dict(fc_object=entity.fc_object,
+                        component_index=component.index, face_index=source.face_index)
+        if len(records) > FCPANEL_RECOVERY_MAX_SOURCES:
+            new_diagnostics.append(_diag(
+                FC_DIAGNOSTIC_WARNING, "surface_recovery_skipped",
+                "Surface recovery group exceeds the bounded source-face limit; "
+                "original diagnostics were retained", **location,
+                details={"source_faces": len(records),
+                         "limit": FCPANEL_RECOVERY_MAX_SOURCES}))
+            continue
+        _progress_checkpoint(progress, "Recovering unresolved surface group")
+        originals = []
+        staged_diagnostics = []
+        try:
+            for owner, comp, face in records:
+                patch = FCSurfacePatch(
+                    face.shape, owner, comp, face, len(originals), face.bbox)
+                patch.center, patch.normal = _face_center_normal(face.shape)
+                patch.problem_codes = [item.code for item in comp.diagnostics
+                                       if item.severity == FC_DIAGNOSTIC_ERROR]
+                if id(face) in failed_records:
+                    patch.problem_codes.append("surface_operation_failed")
+                originals.append(patch)
+            fragments = _fragment_patch_group(
+                originals, tolerance, staged_diagnostics, recovery=True)
+            if staged_diagnostics:
+                raise RuntimeError(staged_diagnostics[0].message)
+
+            # Summed area alone can hide a missing region compensated by an
+            # extra region elsewhere. Audit coverage against each original,
+            # before semantic removal, using the same narrow curved-trim
+            # allowance as the existing fragmentation check.
+            by_source = {}
+            for fragment in fragments:
+                by_source.setdefault(id(fragment.source_face), []).append(fragment)
+            for original in originals:
+                _progress_checkpoint(progress, "Checking recovered surface coverage")
+                pieces = by_source.get(id(original.source_face), [])
+                if not pieces:
+                    raise RuntimeError("A source face has no recovery fragments")
+                if len(pieces) == 1 and _same_shape(pieces[0].shape, original.shape):
+                    continue
+                mapped_area = sum(float(piece.shape.Area) for piece in pieces)
+                coverage = original.shape.common(
+                    Part.makeCompound([piece.shape for piece in pieces]), tolerance)
+                covered_area = sum(float(face.Area) for face in coverage.Faces)
+                allowed = max(tolerance*tolerance, float(original.shape.Area)*2e-4)
+                if (abs(covered_area-float(original.shape.Area)) > allowed or
+                        abs(mapped_area-covered_area) > allowed):
+                    raise RuntimeError("Recovery fragments do not cover their source face")
+
+            # Validate before classification can hide a still-unsplit face by
+            # removing it. Record coincident owners now and resolve their EM
+            # meaning afterwards without a second pairwise Boolean pass.
+            coincidences = []
+            _progress_checkpoint(progress, "Validating recovered surface group")
+            validation = _resolve_coincident_and_validate_surfaces(
+                fragments, tolerance, shared_topology=True,
+                coincidences=coincidences)
+            if validation:
+                raise RuntimeError("Joint fragmentation left unresolved surfaces")
+            staged_diagnostics.extend(_resolve_patch_semantics(model, fragments))
+            for first, second, area in coincidences:
+                if not first.removed and not second.removed:
+                    _coincident_patch_action(
+                        first, second, area, tolerance, staged_diagnostics)
+        except FCPanelizationCancelled:
+            raise
+        except (AttributeError, RuntimeError, TypeError, ValueError) as error:
+            new_diagnostics.append(_diag(
+                FC_DIAGNOSTIC_WARNING, "surface_recovery_failed",
+                "Bounded surface recovery was not accepted; original patches and "
+                "diagnostics were retained: %s" % error, **location))
+            continue
+
+        shared = object()
+        for fragment in fragments:
+            fragment.shared_topology_group = shared
+        for owner, comp, face in records:
+            replacements[id(face)] = by_source[id(face)]
+            replaced_locations.add((id(owner.fc_object), comp.index, face.face_index))
+        new_diagnostics.extend(staged_diagnostics)
+        new_diagnostics.append(_diag(
+            "info", "surface_group_recovered",
+            "Unresolved surfaces were reconstructed together and their material "
+            "interfaces reclassified", **location,
+            details={"source_faces": len(records), "fragments": len(fragments)}))
+
+    if not replacements:
+        return patches, diagnostics + new_diagnostics
+    result = [patch for patch in patches if id(patch.source_face) not in replacements]
+    for pieces in replacements.values():
+        result.extend(pieces)
+    for index, patch in enumerate(result):
+        patch.index = index
+    # Only provisional split/semantic/merge/surface diagnostics are passed
+    # here. Extraction, defeaturing preparation and solid-overlap errors must
+    # never be erased by a successful surface reconstruction.
+    diagnostics = [item for item in diagnostics if
+                   (id(item.fc_object), item.component_index, item.face_index)
+                   not in replaced_locations]
+    return result, diagnostics + new_diagnostics
 
 
 def _island_shape(patches):
@@ -2884,24 +3112,27 @@ def createFCPanelization(document=None, solver=None, progress=None):
             "At least one FCConductor is required for solver export"))
 
     _progress_checkpoint(progress, "Resolving surface interactions")
+    recovery = _SurfaceRecovery()
     splitters, _raw_coincidences, failed, interaction_diagnostics = (
-        _collect_surface_interactions(geometry))
+        _collect_surface_interactions(geometry, recovery))
     diagnostics.extend(interaction_diagnostics)
     _progress_checkpoint(progress, "Splitting intersecting surfaces")
-    patches, split_diagnostics = _build_split_patches(
-        geometry, splitters, failed)
-    diagnostics.extend(split_diagnostics)
+    patches, surface_diagnostics = _build_split_patches(
+        geometry, splitters, failed, recovery)
     _progress_checkpoint(progress, "Assigning material interfaces")
-    diagnostics.extend(_resolve_patch_semantics(geometry, patches))
-    diagnostics.extend(diagnoseDefeaturingPatches(
-        patches, context.solver, context.geometry_tolerance))
+    surface_diagnostics.extend(_resolve_patch_semantics(geometry, patches))
     _progress_checkpoint(progress, "Resolving coplanar surfaces")
-    diagnostics.extend(_merge_redundant_coplanar_patches(
+    surface_diagnostics.extend(_merge_redundant_coplanar_patches(
         patches, set(splitters), geometry.context.geometry_tolerance))
     _progress_checkpoint(progress, "Validating resolved surfaces")
+    surface_diagnostics.extend(_resolve_coincident_and_validate_surfaces(
+        patches, geometry.context.geometry_tolerance, recovery))
+    patches, surface_diagnostics = _recover_surface_groups(
+        geometry, patches, recovery, surface_diagnostics, failed, progress)
+    diagnostics.extend(surface_diagnostics)
+    diagnostics.extend(diagnoseDefeaturingPatches(
+        patches, context.solver, context.geometry_tolerance))
     diagnostics.extend(_validate_conductor_regions(geometry, patches))
-    diagnostics.extend(_resolve_coincident_and_validate_surfaces(
-        patches, geometry.context.geometry_tolerance))
     diagnostics.extend(_diagnose_tiny_gaps(
         patches, geometry.context.geometry_tolerance))
 
