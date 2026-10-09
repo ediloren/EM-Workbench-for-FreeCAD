@@ -3096,6 +3096,10 @@ def createFCPanelization(document=None, solver=None, progress=None):
     clearFCPanelization(document)
     context = buildFCSolverContext(document, solver)
     objects = [obj for obj in document.Objects if _type_of(obj) in FC_ENTITY_TYPES]
+    if context.dimension == "2D":
+        from EM_FC2D import buildPanelization2D
+        result = buildPanelization2D(context, objects, progress)
+        return _publish_panelization(result, document, started, progress)
     prepared, preparation_diagnostics = prepareDefeaturingSources(
         objects, context.solver, context.geometry_tolerance,
         lambda phase: _progress_checkpoint(progress, phase))
@@ -3166,6 +3170,12 @@ def createFCPanelization(document=None, solver=None, progress=None):
         _make_dielectric_groups(result, progress)
     _validate_panels(result, progress)
 
+    return _publish_panelization(result, document, started, progress)
+
+
+def _publish_panelization(result, document, started, progress):
+    """Publish either dimension's completed snapshot using the same UI contract."""
+    geometry = result.geometry
     _progress_checkpoint(progress, "Publishing panelization preview")
     _PANELIZATION_CACHE[id(document)] = result
     for entity in geometry.entities:

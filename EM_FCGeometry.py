@@ -1098,6 +1098,10 @@ def extractFCGeometry(document=None, solver=None, objects=None,
         objects = [obj for obj in getattr(context.document, "Objects", [])
                    if _fc_type(obj) in FC_ENTITY_TYPES]
 
+    if context.dimension == "2D":
+        from EM_FC2D import extractFCGeometry2D
+        return extractFCGeometry2D(context, objects)
+
     entities = []
     diagnostics = []
     seen = set()

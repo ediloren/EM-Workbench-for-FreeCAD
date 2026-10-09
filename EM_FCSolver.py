@@ -307,6 +307,16 @@ class _FCSolver:
             normalizeRelativeValue(obj, prop)
         if prop == "Dimension":
             self._syncReferenceEditor(obj)
+            if FreeCAD.GuiUp and obj.Document is not None:
+                from EM_FCPreview import syncFCPreviewDimension
+                for entity in obj.Document.Objects:
+                    if getattr(getattr(entity, "Proxy", None), "Type", None) in ("FCConductor", "FCDielectric"):
+                        syncFCPreviewDimension(entity.ViewObject, obj.Dimension)
+                    if getattr(getattr(entity, "Proxy", None), "Type", None) == "FCDielectric":
+                        provider = getattr(entity.ViewObject, "Proxy", None)
+                        if hasattr(provider, "_rebuildArrows"):
+                            provider._rebuildArrows()
+                            provider._syncSelection()
         elif (prop == "ReferenceConductor" and
               not getattr(self, "_validatingReference", False)):
             reference = obj.ReferenceConductor

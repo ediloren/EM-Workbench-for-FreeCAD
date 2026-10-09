@@ -113,6 +113,34 @@ def _shape_appearance(vobj):
     return color, transparency
 
 
+def _line_color(vobj):
+    """Read the line appearance used by current and older Part view providers."""
+    try:
+        return tuple(vobj.LineMaterial.DiffuseColor)
+    except (AttributeError, TypeError, ValueError):
+        return tuple(vobj.LineColor)
+
+
+def syncFCPreviewDimension(vobj, dimension=None):
+    """Use body colors for default 2D lines, retaining custom line colors."""
+    obj = getattr(vobj, "Object", None)
+    kind = getattr(getattr(obj, "Proxy", None), "Type", None)
+    if kind not in ("FCConductor", "FCDielectric"):
+        return
+    if dimension is None:
+        from EM_FCSolver import getFCSolver
+        dimension = getattr(getFCSolver(obj.Document), "Dimension", "3D")
+    if kind == "FCConductor":
+        from EM_FCConductor import EMFCCONDUCTOR_DEF_COLOR as body
+        from EM_FCConductor import EMFCCONDUCTOR_DEF_LINECOLOR as edge
+    else:
+        from EM_FCDielectric import EMFCDIELECTRIC_DEF_COLOR as body
+        from EM_FCDielectric import EMFCDIELECTRIC_DEF_LINECOLOR as edge
+    previous, desired = (edge, body) if dimension == "2D" else (body, edge)
+    if all(abs(a-b) < 1e-6 for a, b in zip(_line_color(vobj)[:3], previous)):
+        vobj.LineColor = desired
+
+
 # Attach two panel branches and, for dielectrics, one reference-marker branch to
 # the standard root supplied by the FeaturePython view provider.
 def attachFCPanelPreview(view_provider, vobj, dielectric=False):
@@ -120,10 +148,11 @@ def attachFCPanelPreview(view_provider, vobj, dielectric=False):
     if coin is None:
         return
     ensureFCPreviewProperties(vobj, dielectric)
+    syncFCPreviewDimension(vobj)
     panel_switch = coin.SoSwitch()
     face_color, transparency = _shape_appearance(vobj)
     good = _geometry_node(
-        face_color, tuple(vobj.LineColor), transparency)
+        face_color, _line_color(vobj), transparency)
     bad_color = tuple(vobj.BadPanelColor)
     bad = _geometry_node(bad_color, bad_color, transparency)
     panel_switch.addChild(good["separator"])
@@ -230,6 +259,8 @@ def _reference_arrow_panels(panels):
     eligible = [panel for panel in panels if panel.reference_point is not None]
     if not eligible:
         return []
+    if all(panel.kind == "S" for panel in eligible):
+        return eligible
     centers = [_panel_center(panel) for panel in eligible]
     minima = tuple(min(center[axis] for center in centers) for axis in range(3))
     maxima = tuple(max(center[axis] for center in centers) for axis in range(3))
@@ -371,6 +402,15 @@ def setFCPanelizationPreview(view_provider, panelization):
     _set_panel_geometry(state["bad"], bad)
     state["has_data"] = bool(panels)
     state["panelization"] = panelization
+    state["two_d"] = (panelization is not None and
+                      panelization.context.dimension == "2D")
+    if panelization is not None:
+        syncFCPreviewDimension(view_provider.VObject, panelization.context.dimension)
+    _set_color(state["good"]["line_material"], _line_color(view_provider.VObject))
+    transparency = _shape_appearance(view_provider.VObject)[1]
+    for branch in (state["good"], state["bad"]):
+        _set_transparency(branch["line_material"],
+                          0.0 if state["two_d"] else transparency)
     if state["dielectric"]:
         _set_references(state, panelization, fc_object)
     syncFCPanelPreviewVisibility(view_provider)
@@ -392,6 +432,8 @@ def onFCPanelPreviewChanged(view_provider, prop):
         _set_color(state["good"]["face_material"], tuple(vobj.ShapeColor))
     elif prop == "LineColor":
         _set_color(state["good"]["line_material"], tuple(vobj.LineColor))
+    elif prop == "LineMaterial":
+        _set_color(state["good"]["line_material"], _line_color(vobj))
     elif prop == "BadPanelColor":
         color = tuple(vobj.BadPanelColor)
         _set_color(state["bad"]["face_material"], color)
@@ -408,3 +450,7 @@ def onFCPanelPreviewChanged(view_provider, prop):
             _set_transparency(branch["line_material"], transparency)
     if prop in ("Visibility", "ShowPanelization", "ShowReferencePoints"):
         syncFCPanelPreviewVisibility(view_provider)
+    if state.get("two_d", False):
+        # 2D segments represent the body itself, not translucent face rims.
+        for branch in (state["good"], state["bad"]):
+            _set_transparency(branch["line_material"], 0.0)

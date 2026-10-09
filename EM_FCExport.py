@@ -152,6 +152,8 @@ def _panel_line(panel, conductor_name, dimension, scale,
 
 def _geometry_text(title, panels, conductor_name, dimension, scale,
                    panel_references=False):
+    if dimension == "2D":
+        title = "2D " + title
     lines = ["0 " + title, "*"]
     lines.extend(_panel_line(
         panel, conductor_name, dimension, scale, panel_references)

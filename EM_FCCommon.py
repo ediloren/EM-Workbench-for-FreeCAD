@@ -105,16 +105,21 @@ def getFCBaseFromSelection(selection):
             continue
         if isFCObject(source):
             continue
+        two_d = any(getattr(getattr(obj, "Proxy", None), "Type", None) == "FCSolver"
+                    and getattr(obj, "Dimension", "") == "2D"
+                    for obj in source.Document.Objects)
+        supported = ("Face", "Shell", "Solid", "Compound", "CompSolid")
+        if two_d:
+            supported += ("Wire", "Edge")
         subelements = tuple(getattr(selected, "SubElementNames", ()) or ())
         if subelements:
             subelements = tuple(
                 name for name in subelements
                 if name.rsplit(".", 1)[-1].startswith(
-                    ("Face", "Shell", "Solid", "Compound", "CompSolid")))
+                    supported))
             if not subelements:
                 continue
-        elif getattr(source.Shape, "ShapeType", "") not in (
-                "Face", "Shell", "Solid", "Compound", "CompSolid"):
+        elif getattr(source.Shape, "ShapeType", "") not in supported:
             continue
         base.append((source, subelements or ("",)))
     return normalizeFCBase(base)

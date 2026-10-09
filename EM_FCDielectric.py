@@ -440,6 +440,34 @@ class _ViewProviderFCDielectric:
                 continue
         return None
 
+    def _boundaryArrowAnchors2D(self):
+        """Preview the OUTPERM side of each source edge, including hole rims."""
+        from EM_FC2D import _source_parts
+        for shape in getFCBaseShapes(self.Object.Base):
+            try:
+                faces, edges = _source_parts(shape)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                continue
+            for face in faces:
+                if (not isinstance(face.Surface, Part.Plane) or
+                        abs(abs(face.normalAt(0, 0).z) - 1.0) > 1e-10):
+                    continue
+                # Match the 2D region convention, independently of CAD normals.
+                face = face.copy()
+                if face.normalAt(0, 0).z < 0:
+                    face.reverse()
+                edges.extend(face.Edges)
+            for edge in edges:
+                try:
+                    parameter = (edge.FirstParameter + edge.LastParameter) * 0.5
+                    tangent = edge.tangentAt(parameter)
+                    if edge.Orientation == "Reversed":
+                        tangent = -tangent
+                    yield edge.valueAt(parameter), FreeCAD.Vector(
+                        tangent.y, -tangent.x, 0)
+                except (AttributeError, RuntimeError, ValueError):
+                    continue
+
     def _rebuildArrows(self):
         if not hasattr(self, "arrowCoordinates"):
             return
@@ -448,18 +476,20 @@ class _ViewProviderFCDielectric:
             return
         points = []
         counts = []
-        faces = self._baseFaces()
+        solver = getFCSolver(self.Object.Document)
+        two_d = getattr(solver, "Dimension", "3D") == "2D"
+        faces = getFCBaseShapes(self.Object.Base) if two_d else self._baseFaces()
         length = (self._baseDiagonal(faces) *
                   float(self.VObject.ArrowScale) / 100.0)
         if length <= 1e-12:
             length = 1.0
 
         reverse = str(self.Object.Orientation) == "Reversed"
-        # The unpanelized aid previews live Base normals.  Panelization later
-        # normalizes connected faces before applying this overall direction.
-        for face in self._sampleFaces(faces):
+        # Before panelization these are source boundaries, not resolved contacts.
+        anchors = (self._boundaryArrowAnchors2D() if two_d else
+                   (self._faceArrowAnchor(face) for face in self._sampleFaces(faces)))
+        for anchor_normal in anchors:
             try:
-                anchor_normal = self._faceArrowAnchor(face)
                 if anchor_normal is None:
                     continue
                 anchor, normal = anchor_normal
