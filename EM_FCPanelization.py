@@ -541,6 +541,8 @@ def _collect_surface_interactions(model, recovery=None):
     work = [(component, component)
             for entity in model.entities for component in entity.components]
     work.extend(component_pairs)
+    # Include interactions within one component as well as between objects;
+    # overlapping input faces need splitting even under a common FC owner.
 
     seen_component_pairs = set()
     for first_component, second_component in work:
@@ -615,8 +617,8 @@ def _flatten_shapes(value):
     return result
 
 
-# Split a copied face with all collected edges in one operation, then reject
-# negligible fragments using the model tolerance.
+# Split a copied face with all collected edges in one operation. Check validity
+# and area coverage before accepting either native splitter's result.
 def _split_face_once(face, splitter_edges, tolerance):
     if not splitter_edges:
         return [face], None
@@ -826,6 +828,8 @@ def _point_material(point, dielectric_solids, background, tolerance,
         elif state == FC_POINT_BOUNDARY:
             boundary.append(item)
     candidates = inside or boundary
+    # A strict interior classification is preferable to an on-boundary probe;
+    # use boundary witnesses only when there is no interior material candidate.
     if not candidates:
         return float(background), []
     values = {round(item[0], 12) for item in candidates}
@@ -874,6 +878,8 @@ def _resolve_patch_semantics(model, patches):
     for patch in patches:
         if patch.normal is None:
             continue
+        # Probe off the face on both sides, outside numerical coincidence but
+        # still close to the resolved patch whose material is being assigned.
         distance = max(
             tolerance * 10.0, patch.bbox.diagonal * 1.0e-6, 1.0e-9)
         plus = patch.center + patch.normal * distance
@@ -1510,6 +1516,8 @@ def _recover_surface_groups(model, patches, recovery, diagnostics,
         _progress_checkpoint(progress, "Recovering unresolved surface group")
         originals = []
         staged_diagnostics = []
+        # Reconstruct from prepared source faces, not just surviving patches:
+        # a failed early classification may already have removed a needed piece.
         try:
             for owner, comp, face in records:
                 patch = FCSurfacePatch(
@@ -1573,6 +1581,8 @@ def _recover_surface_groups(model, patches, recovery, diagnostics,
             continue
 
         shared = object()
+        # Mark the accepted arrangement so meshing preparation can reuse it
+        # without a second Boolean pass over the same fragile curved trims.
         for fragment in fragments:
             fragment.shared_topology_group = shared
         for owner, comp, face in records:
@@ -1976,6 +1986,8 @@ def _improve_triangle_mesh(triangles, tolerance, progress=None):
                 _triangle_minimum_angle(candidate_second))
             if candidate_quality <= current_quality + 1.0e-9:
                 continue
+            # Only accept a strict improvement, and do not flip either triangle
+            # twice in one pass using adjacency computed before the first flip.
             result[first_index] = candidate_first
             result[second_index] = candidate_second
             touched.update(users)
@@ -2187,6 +2199,8 @@ def _tessellate_island(island, target_solver, maximum, tolerance,
     candidates = []
     failures = []
     for factor in FCPANEL_TESSELLATION_REFINEMENTS:
+        # Keep refinement bounded. If no trial meets every quality target, the
+        # later fallback can choose among real meshes and report what failed.
         try:
             import MeshPart
             relative_deviation = relative_tolerance * factor
@@ -2224,6 +2238,8 @@ def _tessellate_island(island, target_solver, maximum, tolerance,
             if assignment_error is not None:
                 failures.append(assignment_error)
                 continue
+            # Quality is meaningful only after each triangle has a source patch
+            # and therefore a definite material and orientation.
             candidates.append(assigned)
             if (_assigned_quality(assigned, progress)[0] >=
                     FCPANEL_MIN_TRIANGLE_ANGLE and
@@ -2638,6 +2654,8 @@ def _make_dielectric_groups(panelization, progress=None):
 
     groups = []
     for items in by_semantics.values():
+        # Cache geometric data once. Candidate scoring below stays in bounded
+        # NumPy blocks rather than allocating a full reference-by-panel matrix.
         centers = np.zeros((len(items), 3), dtype=np.float64)
         normals = np.zeros_like(centers)
         valid = np.zeros(len(items), dtype=bool)
@@ -2704,6 +2722,8 @@ def _make_dielectric_groups(panelization, progress=None):
                 pending = pending[1:]
                 continue
             membership = np.empty(len(pending), dtype=bool)
+            # Recompute only the winning candidate's membership. Keeping all
+            # candidate masks would increase peak memory without aiding export.
             points = np.asarray([best_point], dtype=np.float64)
             for offset in range(0, len(pending), FCPANEL_GROUP_PANEL_BLOCK):
                 indices = pending[offset:offset + FCPANEL_GROUP_PANEL_BLOCK]
@@ -2895,8 +2915,8 @@ def _validate_panels(panelization, progress=None):
     panelization.diagnostics.extend(diagnostics)
 
 
-# Sample retained conductor solids against dielectric regions to diagnose
-# impossible or inconsistent material surroundings before export.
+# Check distinct conductor volumes for overlap. Use interior witnesses first,
+# then a localized Boolean only when sampling has not established an overlap.
 def _validate_conductor_regions(model, patches):
     """Detect volumetric overlap without constructing conductor Booleans."""
     tolerance = model.context.geometry_tolerance
@@ -2958,8 +2978,9 @@ def _validate_conductor_regions(model, patches):
                 except (AttributeError, RuntimeError, TypeError, ValueError):
                     continue
         if not overlap:
-            # Sampling rejects most pairs cheaply. The localized common is a
-            # final correctness check only for surviving solid bbox pairs.
+            # No sampled witness is not proof of separation: thin interlocking
+            # regions can avoid all probes. Check the remaining bbox pair with
+            # a Boolean volume intersection before declaring it non-overlapping.
             try:
                 common = first_solid.shape.common(
                     second_solid.shape, tolerance)
@@ -3009,6 +3030,8 @@ def _remove_duplicate_solver_panels(panels, tolerance, diagnostics,
             panel.surrounding_permittivity,
             panel.inner_permittivity, panel.outer_permittivity)
         key = (id(panel.entity), _panel_key(panel, tolerance), semantics)
+        # Coincident panels with different owners or material conditions must
+        # survive this cleanup so validation can report the actual conflict.
         if key in seen:
             diagnostics.append(_diag(
                 FC_DIAGNOSTIC_WARNING, "duplicate_panel_removed",
@@ -3096,6 +3119,8 @@ def createFCPanelization(document=None, solver=None, progress=None):
     clearFCPanelization(document)
     context = buildFCSolverContext(document, solver)
     objects = [obj for obj in document.Objects if _type_of(obj) in FC_ENTITY_TYPES]
+    # Keep the lightweight planar arrangement entirely outside the 3D
+    # defeaturing, surface probing and shared-island meshing stages.
     if context.dimension == "2D":
         from EM_FC2D import buildPanelization2D
         result = buildPanelization2D(context, objects, progress)
@@ -3116,6 +3141,8 @@ def createFCPanelization(document=None, solver=None, progress=None):
             "At least one FCConductor is required for solver export"))
 
     _progress_checkpoint(progress, "Resolving surface interactions")
+    # Collect every cut before splitting. Resolving materials on an unsplit face
+    # could incorrectly classify its entire area from a single local sample.
     recovery = _SurfaceRecovery()
     splitters, _raw_coincidences, failed, interaction_diagnostics = (
         _collect_surface_interactions(geometry, recovery))
@@ -3133,6 +3160,8 @@ def createFCPanelization(document=None, solver=None, progress=None):
         patches, geometry.context.geometry_tolerance, recovery))
     patches, surface_diagnostics = _recover_surface_groups(
         geometry, patches, recovery, surface_diagnostics, failed, progress)
+    # Recovery may replace provisional surface errors, but must not erase
+    # source-extraction or conductor-volume errors from the overall result.
     diagnostics.extend(surface_diagnostics)
     diagnostics.extend(diagnoseDefeaturingPatches(
         patches, context.solver, context.geometry_tolerance))
@@ -3178,6 +3207,8 @@ def _publish_panelization(result, document, started, progress):
     geometry = result.geometry
     _progress_checkpoint(progress, "Publishing panelization preview")
     _PANELIZATION_CACHE[id(document)] = result
+    # Publish only a completed result, including its diagnostics. Cancellation
+    # earlier in the pipeline must not expose a half-built preview as exportable.
     for entity in geometry.entities:
         obj = entity.fc_object
         object_panels = result.panels_for(obj)

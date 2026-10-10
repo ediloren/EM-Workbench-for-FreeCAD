@@ -35,8 +35,8 @@ import FreeCAD
 # - File discovery follows physical references and embedded F/FILE sections.
 # - Relative paths use the containing file, matching FasterCap semantics.
 # - Cycle and depth checks bound malformed or mutually recursive inputs.
-# - One editor represents each physical or logical section; only physical files
-#   can be saved because embedded sections have no independent pathname.
+# - One editor represents each physical file. Embedded sections remain in that
+#   file's editor because they have no independently writable pathname.
 # - GUI classes exist only with GuiUp, keeping console imports Qt-independent.
 # - Geometry parsing remains in import_fastercap.py; this module owns commands,
 #   discovery, syntax highlighting, and the optional MDI viewer.
@@ -116,6 +116,8 @@ if FreeCAD.GuiUp:
             if stage != self.stage:
                 self.stage = stage
                 self.dialog.setLabelText(translate("EM", stage + "..."))
+            # Parsing may not yet know the total work. Keep an indeterminate
+            # bar until a construction stage can supply a meaningful count.
             if total > 0:
                 if (self.dialog.minimum() != 0 or
                         self.dialog.maximum() != total):
@@ -124,6 +126,8 @@ if FreeCAD.GuiUp:
             elif self.dialog.minimum() != 0 or self.dialog.maximum() != 0:
                 self.dialog.setRange(0, 0)
             QtWidgets.QApplication.processEvents()
+            # Return cancellation to the reader at its next coarse checkpoint;
+            # do not interrupt a native shape construction halfway through.
             self.cancelled = self.dialog.wasCanceled()
             return not self.cancelled
 
@@ -160,6 +164,8 @@ if FreeCAD.GuiUp:
             super(_FCDensityLegend, self).__init__(parent)
             self.minimum = float(minimum)
             self.maximum = float(maximum)
+            # This child widget is a screen overlay, not scene geometry. Let
+            # mouse events pass through to the underlying camera controls.
             self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
             self.setAttribute(QtCore.Qt.WA_NoSystemBackground, True)
             self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
@@ -211,6 +217,8 @@ if FreeCAD.GuiUp:
             label_x = bar_x + bar_width + 10
             label_width = self.width() - label_x - 5
             label_count = 5 if self.height() >= 130 else 3
+            # Reduce label density in a short view without changing the color
+            # scale or obscuring its minimum, midpoint and maximum values.
             value_step = ((self.maximum - self.minimum) /
                           float(label_count - 1))
             position_step = float(bottom - top) / float(label_count - 1)
@@ -260,6 +268,8 @@ if FreeCAD.GuiUp:
             model_window = (mdi_area.activeSubWindow()
                             if mdi_area is not None else None)
         if isinstance(model_window, _FCTextWindow):
+            # Editors remember their geometry window; the legend must never
+            # become attached to whichever text tab happened to be active.
             model_window = model_window.modelWindow
         if model_window is None:
             return
@@ -285,6 +295,8 @@ if FreeCAD.GuiUp:
 
         def trigger_no_shading():
             try:
+                # Queued callbacks may run after a document was closed/reloaded.
+                # Resolve names again rather than retaining a stale object wrapper.
                 document = FreeCAD.listDocuments().get(document_name)
                 current_model = (document.getObject(object_name)
                                  if document is not None else None)
@@ -411,6 +423,7 @@ def getFCInputFiles(filename):
                 "'" + path + "': " + str(error) + "\n")
             return
 
+        # Mark the file before following its children to break include cycles.
         physical_files.add(identity)
         files.append(path)
         parse_logical(path, lines, _fc_embedded_files(lines), None, depth)
@@ -551,9 +564,12 @@ def importFCInputFile(filename, viewText=False, model_window=None,
             usePartType='compound', progress=progress)
         cancelled = progress.cancelled if progress is not None else False
     finally:
+        # Also close the modal dialog when parsing raises or the user cancels.
         if progress is not None:
             progress.close()
     if FreeCAD.GuiUp and model_window is None:
+        # Capture the concrete geometry subwindow before opening source editors;
+        # document activation alone cannot later distinguish those MDI windows.
         try:
             FreeCADGui.activateView("Gui::View3DInventor", False)
         except (AttributeError, RuntimeError, TypeError):
@@ -735,6 +751,7 @@ if FreeCAD.GuiUp:
                 translate("EM", "Save All"), container)
             save_all_button.clicked.connect(self.saveAllFiles)
             button_layout.addWidget(save_all_button)
+            # Qt interprets '&' as a mnemonic; double it for a literal label.
             reload_button = QtWidgets.QPushButton(
                 translate("EM", "Save && Reload"), container)
             reload_button.clicked.connect(self.reloadModel)
@@ -810,6 +827,8 @@ if FreeCAD.GuiUp:
                 result = importFCInputFile(self.rootPath, False, self.modelWindow,
                                            False)
                 if not result:
+                    # Restore the old imported objects on parser failure or
+                    # cancellation. Their editors must keep the old association.
                     document.abortTransaction()
                     document.recompute()
                     return False
@@ -828,6 +847,7 @@ if FreeCAD.GuiUp:
                     editor.setImportContext(self.rootPath, result, self.modelWindow)
                 except RuntimeError:
                     continue
+            # Only a committed reload may replace the legend and redirect focus.
             _fc_activate_model_view(result, self.modelWindow)
             _fc_set_density_no_shading(result, self.modelWindow)
             _fc_update_density_legend(result, self.modelWindow, True)
@@ -880,6 +900,8 @@ if FreeCAD.GuiUp:
 
         def saveAllFiles(self):
             """Save every open FasterCap / FastCap text editor."""
+            # Snapshot the registry: Qt callbacks may close windows while these
+            # operations run. A deleted C++ widget raises RuntimeError in Python.
             for editor in list(_fc_text_windows.values()):
                 try:
                     if not editor.saveFile():

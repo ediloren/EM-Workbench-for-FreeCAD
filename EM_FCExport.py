@@ -241,6 +241,8 @@ def _build_export_files(panelization, list_filename):
     used_names = set()
 
     def geometry_name(base):
+        # Labels are user-editable and may collide after filename sanitization.
+        # Give every generated material group its own physical file regardless.
         candidate = _safe_name("%s_%s%s" % (stem, base, extension),
                                "fc_geometry" + extension)
         suffix = 2
@@ -265,6 +267,8 @@ def _build_export_files(panelization, list_filename):
                  if target == "FasterCap" else None)
         if entity.kind == "FCConductor":
             groups = _group_conductor_panels(panelization, entity)
+            # Separate material files still describe one potential. Continue
+            # the conductor through every C record except its final record.
             for index, (permittivity, panels) in enumerate(groups):
                 filename = geometry_name(
                     "%s_c%d" % (object_name, index + 1))
@@ -277,6 +281,8 @@ def _build_export_files(panelization, list_filename):
             continue
 
         if target == "FasterCap" and dimension == "3D":
+            # Per-panel references avoid the common-reference search for 3D
+            # FasterCap. The list reference is still required by its file grammar.
             groups = _group_fastercap_dielectrics(panelization, entity)
             for index, ((outer, inner), panels) in enumerate(groups):
                 filename = geometry_name(
@@ -297,6 +303,8 @@ def _build_export_files(panelization, list_filename):
         else:
             groups = [group for group in panelization.dielectric_groups
                       if group.entity is entity]
+            # FastCap and the 2D export path need one valid reference side for
+            # the entire D group; an inner-side reference carries the '-' flag.
             for index, group in enumerate(groups):
                 filename = geometry_name(
                     "%s_d%d" % (object_name, index + 1))
@@ -324,12 +332,16 @@ def _write_files_atomically(folder, files, overwrite):
 
     staged = []
     try:
+        # Write beside the destinations so each replacement stays on the same
+        # filesystem. Finish all staging before replacing any existing file.
         for name, contents in files.items():
             handle, temporary = tempfile.mkstemp(
                 prefix=".fc-export-", dir=folder, text=True)
             staged.append((temporary, os.path.join(folder, name)))
             with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as fid:
                 fid.write(contents)
+        # Each replace is atomic, but the set of replacements is not a
+        # filesystem transaction if a later replacement fails.
         for temporary, destination in staged:
             os.replace(temporary, destination)
     finally:
@@ -375,10 +387,14 @@ def exportFCPanelization(document=None, folder=None, filename=None,
     if (panelization.signature !=
             getFCPanelizationSignature(document, solver) or
             _panelization_sources_touched(panelization)):
+        # Pending recomputes matter as well as changed signatures: linked CAD
+        # may still expose its old shape until the document has recomputed.
         FreeCAD.Console.PrintWarning(translate(
             "EM",
             "Warning: the FC model changed after panelization; exporting the existing static panelization.\n"))
     if panelization.has_errors and not allow_errors:
+        # The GUI catches this separately to request explicit export consent;
+        # scripted callers must make the same choice with allow_errors.
         error_count = sum(
             item.severity == "error"
             for item in panelization.diagnostics)

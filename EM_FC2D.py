@@ -57,6 +57,8 @@ def _source_parts(shape):
     if shape.Solids:
         raise ValueError('Select planar cross-section faces, not whole solids')
     faces = list(shape.Faces)
+    # Do not interpret the trimming wires of an existing face a second time
+    # as independent contours. Only unclaimed wires/edges need conversion.
     used = [e for f in faces for e in f.Edges]
     loops, edges = [], []
     for wire in shape.Wires:
@@ -77,6 +79,8 @@ def _source_parts(shape):
         else:
             edges.extend(wire.OrderedEdges)
     if loops:
+        # Build nested loops together so inner loops remain holes, rather than
+        # becoming overlapping filled faces with their own material ownership.
         faces.extend(Part.makeFace(loops, 'Part::FaceMakerBullseye').Faces)
     if not faces and not edges:
         raise ValueError('The 2D source has no faces or contour edges')
@@ -113,12 +117,16 @@ def _extract(context, objects, diagnostics):
                         if abs(height-z_level) > tol:
                             raise ValueError("All 2D regions must use the same Z level")
                         face = face.copy()
+                        # Remove only the accepted numerical Z discrepancy on
+                        # the copy; the exported model has X/Y coordinates only.
                         face.translate(App.Vector(0, 0, z_level-height))
                         if is_face and face.normalAt(0, 0).z < 0:
                             face.reverse()
                         if (face.Area <= tol*tol if is_face else face.Length <= tol):
                             raise ValueError("A 2D source has zero area or length")
                         index = len(entity.components)
+                        # Keep provenance for both kinds of source. Open edges
+                        # carry a boundary condition but no filled-region flags.
                         bbox = FCBoundingBox.from_shape(face)
                         source = FCFaceGeometry(face, face, base, name, (),
                             "2D region" if is_face else "2D contour", None, index, 0, False, bbox)
@@ -166,6 +174,8 @@ def _arrange(regions, tolerance, diagnostics):
     if len(history) != len(regions):
         raise RuntimeError("Incomplete 2D Boolean history")
     cells, buckets = [], {}
+    # Boolean history, not point sampling, determines which original regions
+    # own each cell. One cell may belong to several inputs before resolution.
 
     def new_cell(face):
         face = face if face.normalAt(0, 0).z > 0 else face.reversed()
@@ -194,6 +204,8 @@ def _arrange(regions, tolerance, diagnostics):
 
     reported = set()
     for cell in cells:
+        # A shared cell unites pieces of one potential; different conductor
+        # owners instead mean a physical short that must remain an error.
         conductors = {id(r.entity): r for r in cell.owners
                       if r.entity.kind == "FCConductor"}
         if len(conductors) > 1:
@@ -206,6 +218,8 @@ def _arrange(regions, tolerance, diagnostics):
                 reported.add(key)
         cell.conductor = next(iter(conductors.values()), None)
         dielectrics = [r for r in cell.owners if r.entity.kind == "FCDielectric"]
+        # Proper containment of cell sets permits nested materials. Partial
+        # overlap is not nesting, even when the original bounding boxes contain.
         for i, a in enumerate(dielectrics):
             for b in dielectrics[i+1:]:
                 if a.entity is b.entity:
@@ -253,6 +267,8 @@ def _boundaries(cells, tolerance, diagnostics):
             first, edge = users[0]
             second = users[1][0] if len(users) == 2 else None
             a, b = first.conductor, second.conductor if second else None
+            # Decide ownership once per shared edge: metal replaces dielectric
+            # contact segments, and internal edges of a metal region disappear.
             if a is not None and b is not None:
                 continue  # Same conductor's internal edge, or already diagnosed short.
             if a is not None or b is not None:
@@ -268,6 +284,8 @@ def _boundaries(cells, tolerance, diagnostics):
                 first, second = second, first
                 edge = users[1][1]
             owner = first.dielectric
+            # An adjacent filled region gives the actual material across this
+            # interface; use the object's outside value only at an exposed rim.
             inner = _inside_value(owner)
             outer = _inside_value(second.dielectric) if second else _outside_value(owner)
             if math.isclose(inner, outer, rel_tol=1e-12):
@@ -316,6 +334,8 @@ def _open_boundaries(boundaries, contours, cells, tolerance, diagnostics):
     if len(history) != len(records):
         raise RuntimeError('Incomplete open-contour Boolean history')
     fragments = {}
+    # The same output edge may occur in several history entries. Preserve those
+    # owners until coincident metal and dielectric conditions are compared.
     for record, images in zip(records, history):
         original = record[0]
         if not images and any(e.isSame(original) for e in result.Edges):
@@ -338,6 +358,8 @@ def _open_boundaries(boundaries, contours, cells, tolerance, diagnostics):
     for bucket in fragments.values():
         for edge, users in bucket:
             midpoint = edge.valueAt((edge.FirstParameter+edge.LastParameter)*0.5)
+            # All retained region boundaries have already split this edge.
+            # Its midpoint can therefore classify the complete fragment.
             containing = [c for c, box in cell_boxes
                           if box.contains_point(midpoint, tolerance)
                           and c.shape.isInside(midpoint, tolerance, True)]
@@ -373,6 +395,8 @@ def _open_boundaries(boundaries, contours, cells, tolerance, diagnostics):
                 resolved.append((chosen[0], chosen[1], perm, None, None))
                 continue
             chosen = users[0]
+            # Oppositely directed coincident edges exchange left/right sides;
+            # compare their material pairs in one direction before deduplicating.
             for other in users[1:]:
                 aligned = _orient_fragment(other[0], chosen[0]).Orientation == other[0].Orientation
                 pair = (other[3], other[4]) if aligned else (other[4], other[3])
@@ -384,6 +408,8 @@ def _open_boundaries(boundaries, contours, cells, tolerance, diagnostics):
             if not math.isclose(chosen[3], chosen[4], rel_tol=1e-12):
                 resolved.append(chosen)
     vertices = {}
+    # Area tests cannot detect a short between zero-thickness conductors.
+    # Shared vertices also catch crossings that the edge splitter just noded.
     for edge, owner, _, _, _ in resolved:
         if owner.entity.kind == 'FCConductor':
             for vertex in edge.Vertexes:
@@ -442,6 +468,8 @@ def _discretize(boundaries, tolerance, diagnostics, progress):
     import EM_FCPanelization as P
     factors = [1.0]*len(boundaries)
     for attempt in range(7):
+        # Each trial uses one discretization per retained CAD edge. Reusing
+        # shared vertex coordinates prevents cracks at material transitions.
         patches, panels, vertices = [], [], {}
         for index, (edge, owner, perm, inner, outer) in enumerate(boundaries):
             if index % 128 == 0:
@@ -479,6 +507,8 @@ def _discretize(boundaries, tolerance, diagnostics, progress):
                      if "Line" not in type(boundaries[i][0].Curve).__name__]
         if not refinable:
             break
+        # Refining a straight edge cannot remove a real crossing. Tighten only
+        # curved participants whose chord approximation caused the conflict.
         for index in refinable:
             factors[index] *= .25
     _error(diagnostics, "intersecting_2d_segments",
@@ -501,6 +531,8 @@ def _make_dielectric_groups_2d(panelization, progress=None):
 
     tolerance = panelization.context.geometry_tolerance
     semantics = {}
+    # A D record has one owner and one ordered material pair, regardless of how
+    # many disconnected contour portions its reference point happens to cover.
     for panel in panelization.panels:
         if panel.entity.kind == 'FCDielectric':
             key = (id(panel.entity), round(panel.outer_permittivity, 12),
@@ -517,6 +549,8 @@ def _make_dielectric_groups_2d(panelization, progress=None):
         middle = (local.min(axis=0)+local.max(axis=0))*0.5
         radius = max(float(np.linalg.norm(np.ptp(local, axis=0))), tolerance*100)
         candidates = [origin+local.mean(axis=0), origin+middle]
+        # Centroids often cover a whole convex contour on its inner side;
+        # surrounding candidates cover larger runs on a concave contour.
         # Separate/disconnected source regions can have useful distinct centers.
         components = {}
         for i, panel in enumerate(items):
@@ -594,6 +628,8 @@ def buildPanelization2D(context, objects, progress=None):
     patches, panels = [], []
     if regions and not diagnostics:
         try:
+            # Resolve filled-region ownership first. Open contours are then
+            # split against the retained boundaries without inventing volumes.
             P._progress_checkpoint(progress, "Resolving planar 2D regions")
             filled = [r for r in regions if r.shape.ShapeType == 'Face']
             contours = [r for r in regions if r.shape.ShapeType == 'Edge']

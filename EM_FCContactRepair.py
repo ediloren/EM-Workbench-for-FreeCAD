@@ -28,6 +28,8 @@ def preservesContacts(before, after, other, tolerance):
     if common.Area <= tolerance*tolerance:
         return True
     retained = common.common(_boundary(after), tolerance)
+    # Protect the old contact footprint, not just a nonzero overlap somewhere
+    # else on the neighbor after the proposed repair.
     allowance = max(tolerance*tolerance, common.Area*1e-8,
                     common.Length*tolerance*4)
     return retained.Area >= common.Area-allowance
@@ -63,6 +65,8 @@ def _support_bound(face, target):
     if kind is Part.Sphere:
         return (source.Center-target.Center).Length + abs(source.Radius-target.Radius)
     axis = target.Axis
+    # Bound cylinder-axis drift over the trimmed axial interval, then include
+    # radius mismatch and tilt across the circular section.
     ends = [source.Center + source.Axis*v for v in face.ParameterRange[2:]]
     offset = max((p-target.Center).cross(axis).Length for p in ends)
     sine = source.Axis.cross(axis).Length
@@ -91,6 +95,8 @@ def _footprint(first, second, tolerance):
                 if (projected-points[0]).Length > tolerance:
                     points.append(projected)
             elif (points[1]-points[0]).cross(projected-points[0]).Length > tolerance*tolerance:
+                # Three non-collinear witnesses distinguish a contact footprint
+                # from a lone tangent point or a narrow line of proximity.
                 return True
     return False
 
@@ -120,6 +126,8 @@ def _signed(point, surface):
 def _interior_point(solid, tolerance):
     from EM_FCPanelization import _face_center_normal
     center = solid.CenterOfMass
+    # A torus or concave Boolean cell can have its centre of mass outside the
+    # material. Fall back to inward face probes before trusting a cell label.
     if solid.isInside(center, tolerance, False):
         return center
     for face in solid.Faces:
@@ -161,6 +169,8 @@ def _retrim(shape, face, target, distance, tolerance):
                 raise ValueError("could not close the offset collar")
             collar = Part.makeSolid(shell)
     expanded = shape.fuse(collar).removeSplitter()
+    # Split the temporarily expanded solid on the target support, then retain
+    # only its original material side. This changes BREP, not primitive inputs.
     support = _extended_support(target, expanded.BoundBox)
     fragments = SplitAPI.slice(expanded, [support], "Split", tolerance).Solids
     projected = _project(point, target)
@@ -186,6 +196,8 @@ def _audit(piece, candidate, source_face, reference_face, bound, others, toleran
     if not _safe_replacement(piece, candidate, others, tolerance):
         raise ValueError("repair changes a protected contact or material connectivity")
     allowance = piece.budget-piece.moved
+    # Charge every accepted edit against the remaining budget; a sequence of
+    # individually small repairs must not accumulate an unlimited displacement.
     old_rim, new_rim = _boundary(piece.shape), _boundary(candidate)
     distance = max(Part.Vertex(p).distToShape(rim)[0]
                    for shape, rim in ((piece.shape, new_rim), (candidate, old_rim))
@@ -219,6 +231,8 @@ def _audit(piece, candidate, source_face, reference_face, bound, others, toleran
     aligned = [f for f in candidate.Faces
                if (d := _support_bound(f, reference_face.Surface)) is not None
                and d <= tolerance*10]
+    # Matching an infinite support is insufficient: the repaired trimmed face
+    # must actually overlap the requested reference interface.
     if not aligned or Part.makeCompound(aligned).common(
             reference_face, tolerance).Area <= tolerance*tolerance:
         raise ValueError("repair did not establish the requested trimmed interface")
@@ -281,6 +295,8 @@ def repairContacts(ordered, neighbors, tolerance, diagnostics, progress=None):
                         if piece.shape.ShapeType != "Solid":
                             methods = methods[1:]
                         for method, build in methods:
+                            # Both reconstruction paths face the same audit.
+                            # Failure leaves piece.shape untouched for the next try.
                             try:
                                 candidate = build()
                                 distance = _audit(piece, candidate, face, target,
@@ -289,6 +305,8 @@ def repairContacts(ordered, neighbors, tolerance, diagnostics, progress=None):
                                 errors.append(str(error))
                                 continue
                             piece.shape = candidate
+                            # Publish only after the complete audit, so later
+                            # neighbors see a valid, budgeted analysis shape.
                             piece.moved += distance
                             _warn(diagnostics, piece, "defeaturing_contact_repaired",
                                   "Reconciled a local %s interface with %s using %s BREP repair; inspect the approximation"

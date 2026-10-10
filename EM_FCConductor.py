@@ -98,6 +98,8 @@ def makeFCConductor(base=None, defaultPermittivity=None,
             "EM", "Select at least one face, shell, solid, compsolid, or compound to create an FCConductor.\n"))
         return None
 
+    # Reject duplicate Base ownership before allocating another potential.
+    # Geometric overlap between distinct sources is checked during panelization.
     owners = getFCBaseOwners(
         FreeCAD.ActiveDocument, normalized_base, "FCConductor")
     if owners:
@@ -120,6 +122,8 @@ def makeFCConductor(base=None, defaultPermittivity=None,
         _ViewProviderFCConductor(obj.ViewObject)
 
     obj.Base = normalized_base
+    # Snapshot the background as this object's fallback; resolved dielectric
+    # contacts can give individual boundary portions a different permittivity.
     permittivity = (getFCSpacePermittivity(obj.Document)
                     if defaultPermittivity is None
                     else defaultPermittivity)
@@ -230,6 +234,8 @@ class _FCConductor:
                     QT_TRANSLATE_NOOP("App::Property", description))
                 setattr(obj, name, False if name == "Panelized" else 0)
             obj.setEditorMode(name, 1)
+            # Publishing counts must not request another geometry recompute.
+            # Some FreeCAD versions lack these property-status flags.
             if hasattr(obj, "setPropertyStatus"):
                 try:
                     obj.setPropertyStatus(name, "Output")
@@ -242,6 +248,7 @@ class _FCConductor:
                 not hasFCObjectReference(obj.Base)):
             return
         self._guardingBase = True
+        # Assigning Base calls onChanged again; guard the corrective assignment.
         try:
             obj.Base = normalizeFCBase(obj.Base)
         finally:
@@ -274,6 +281,8 @@ class _FCConductor:
         self.Object = obj
         self._guardingBase = False
         self._ensureProperties(obj)
+        # Only source links are persistent. Saved counters cannot stand in for
+        # the transient panel arrays, which must be explicitly regenerated.
         obj.Panelized = False
         obj.PanelCount = 0
         obj.PanelErrorCount = 0
@@ -370,6 +379,7 @@ class _CommandFCConductor:
             return
 
         extending = bool(targets)
+        # Keep creation/extension and any automatic solver creation in one undo.
         transaction = "Add FCConductor geometry" if extending else "Create FCConductor"
         FreeCAD.ActiveDocument.openTransaction(translate("EM", transaction))
         FreeCADGui.addModule("EM")

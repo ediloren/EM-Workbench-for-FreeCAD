@@ -211,6 +211,7 @@ def _safe_replacement(piece, candidate, others, tolerance):
     if candidate.isNull() or not candidate.isValid():
         return False
     if len(candidate.Solids) != len(piece.shape.Solids):
+        # Removing a feature must not create, split or erase a material body.
         return False
     for other in others:
         if other is piece:
@@ -219,6 +220,8 @@ def _safe_replacement(piece, candidate, others, tolerance):
                 not preservesContacts(piece.shape, candidate, other.shape, tolerance)):
             return False
         if other.obj is piece.obj:
+            # Pieces of one logical object may already touch. Preserve that
+            # connectivity even though it is not a short between potentials.
             if (_near(piece.shape, other.shape, tolerance) and
                     piece.shape.distToShape(other.shape)[0] <= tolerance and
                     candidate.distToShape(other.shape)[0] > tolerance):
@@ -259,6 +262,8 @@ def _remove_small_faces(piece, others, tolerance, diagnostics):
         if not _safe_replacement(piece, candidate, others, tolerance):
             raise ValueError("replacement changes validity or material connectivity")
         maximum = piece.budget - piece.moved
+        # Audit in both directions: sampling only the old shape can miss a
+        # newly created protrusion, while only the new shape can miss a lost rim.
         distance = max(Part.Vertex(point).distToShape(target)[0]
                        for source, target in ((piece.shape, candidate),
                                               (candidate, piece.shape))
@@ -299,6 +304,8 @@ def _alignment(piece, reference, threshold, tolerance):
                 constraints.append((normal, offset))
     shift = FreeCAD.Vector()
     basis = []
+    # Solve only independent normal constraints. A repeated direction with a
+    # different required shift is ambiguous, not a reason to average contacts.
     for normal, offset in constraints:
         residual = normal - sum((axis * normal.dot(axis) for axis in basis),
                                 FreeCAD.Vector())
@@ -350,6 +357,7 @@ def prepareDefeaturingSources(objects, solver, tolerance, progress=None):
     from EM_FCGeometry import FCBoundingBoxIndex
     diagnostics = []
     if not any(settingsFor(obj, solver).enabled for obj in objects):
+        # The common disabled case avoids copies, neighbor searches and OCC work.
         return None, diagnostics
     records, pieces = [], []
     for obj in objects:
@@ -363,6 +371,8 @@ def prepareDefeaturingSources(objects, solver, tolerance, progress=None):
                     continue
                 children = []
                 for child in _pieces(shape):
+                    # Relative size and deviation use each component's scale;
+                    # a distant large object must not relax this body's budget.
                     length = child.BoundBox.DiagonalLength
                     piece = _Piece(obj, child.copy(), child, settings,
                                    length*settings.relative_size,
@@ -391,6 +401,8 @@ def prepareDefeaturingSources(objects, solver, tolerance, progress=None):
         except (AttributeError, RuntimeError, ValueError, TypeError):
             pass
     from EM_FCContactRepair import repairContacts
+    # Prefer already established interfaces as anchors at equal priority. This
+    # prevents a nearby offset body from displacing an existing exact contact.
     ordered.sort(key=lambda p: (p.settings.enabled, -p.settings.priority,
                                id(p) not in anchored, p.kind != "FCConductor"))
     for index, piece in enumerate(ordered):
@@ -476,6 +488,8 @@ def prepareDefeaturingSources(objects, solver, tolerance, progress=None):
         except (AttributeError, RuntimeError, ValueError, TypeError) as error:
             _warn(diagnostics, piece, "defeaturing_tangency_retained", str(error))
     sources = {obj.Name: [] for obj in objects}
+    # Reassemble replacements under the original Base references so extraction
+    # and diagnostics still refer to the user's sources, not temporary objects.
     for obj, source, subname, children, original in records:
         if not children:
             shape = original

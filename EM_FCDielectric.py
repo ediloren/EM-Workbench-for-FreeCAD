@@ -253,6 +253,7 @@ class _FCDielectric:
                 not hasFCObjectReference(obj.Base)):
             return
         self._guardingBase = True
+        # The Base correction itself sends a property-change notification.
         try:
             obj.Base = normalizeFCBase(obj.Base)
         finally:
@@ -284,6 +285,8 @@ class _FCDielectric:
         self.Object = obj
         self._guardingBase = False
         self._ensureProperties(obj)
+        # Restored source geometry is usable, but no generated panels or
+        # reference arrows survive the document's transient preview cache.
         obj.Panelized = False
         obj.PanelCount = 0
         obj.PanelErrorCount = 0
@@ -443,6 +446,8 @@ class _ViewProviderFCDielectric:
     def _boundaryArrowAnchors2D(self):
         """Preview the OUTPERM side of each source edge, including hole rims."""
         from EM_FC2D import _source_parts
+        # Use the same face/wire interpretation as 2D extraction so a hole or
+        # open edge has the same material-side convention before panelization.
         for shape in getFCBaseShapes(self.Object.Base):
             try:
                 faces, edges = _source_parts(shape)
@@ -459,6 +464,8 @@ class _ViewProviderFCDielectric:
                 edges.extend(face.Edges)
             for edge in edges:
                 try:
+                    # OCC tangents follow increasing curve parameters. Apply
+                    # the topological direction before taking the right normal.
                     parameter = (edge.FirstParameter + edge.LastParameter) * 0.5
                     tangent = edge.tangentAt(parameter)
                     if edge.Orientation == "Reversed":
@@ -479,6 +486,8 @@ class _ViewProviderFCDielectric:
         solver = getFCSolver(self.Object.Document)
         two_d = getattr(solver, "Dimension", "3D") == "2D"
         faces = getFCBaseShapes(self.Object.Base) if two_d else self._baseFaces()
+        # Scale the display aid with the source size, not the tiny numerical
+        # offset used to encode a solver reference point.
         length = (self._baseDiagonal(faces) *
                   float(self.VObject.ArrowScale) / 100.0)
         if length <= 1e-12:
@@ -500,6 +509,8 @@ class _ViewProviderFCDielectric:
                     normal = FreeCAD.Vector(-normal.x, -normal.y, -normal.z)
                 start = anchor
                 tip = anchor + normal * length
+                # Pick a perpendicular wing direction even for a vertical 3D
+                # normal, where crossing with the Z axis would give zero.
                 side = normal.cross(FreeCAD.Vector(0.0, 0.0, 1.0))
                 if side.Length <= 1e-9:
                     side = normal.cross(FreeCAD.Vector(1.0, 0.0, 0.0))
@@ -581,6 +592,8 @@ class _ViewProviderFCDielectric:
             setFCPanelPreviewSelected(self, False)
 
     def setPanelizationPreview(self, panelization):
+        # Clearing the frozen preview restores source-side orientation aids;
+        # an existing preview instead uses its resolved segment/panel references.
         setFCPanelizationPreview(self, panelization)
         if panelization is None:
             self._rebuildArrows()
@@ -624,6 +637,7 @@ class _ViewProviderFCDielectric:
         return os.path.join(iconPath, 'EM_FCDielectric.svg')
 
     def onDelete(self, vobj, subelements):
+        # Selection observers outlive document objects unless explicitly removed.
         if getattr(self, "_observerRegistered", False):
             try:
                 FreeCADGui.Selection.removeObserver(self)

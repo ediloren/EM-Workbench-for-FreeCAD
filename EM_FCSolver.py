@@ -151,6 +151,8 @@ def makeFCSolver(solver=None, units=None, autoMaxErr=None, meshEps=None,
     obj.TargetSolver = (solver if solver in EMFCSOLVER_SOLVERS
                         else EMFCSOLVER_DEFSOLVER)
     obj.Units = units if units in EMFCSOLVER_UNITS else EMFCSOLVER_DEFUNITS
+    # Geometry controls belong to the workbench. The solver's convergence and
+    # refinement options below are stored here for later command-line export.
     obj.SpacePermittivity = (
         EMFCSOLVER_DEF_SPACE_PERMITTIVITY
         if spacePermittivity is None else spacePermittivity)
@@ -307,6 +309,8 @@ class _FCSolver:
             normalizeRelativeValue(obj, prop)
         if prop == "Dimension":
             self._syncReferenceEditor(obj)
+            # A dimension switch changes source arrows and default line colors
+            # immediately; it does not regenerate a frozen panel snapshot.
             if FreeCAD.GuiUp and obj.Document is not None:
                 from EM_FCPreview import syncFCPreviewDimension
                 for entity in obj.Document.Objects:
@@ -323,6 +327,8 @@ class _FCSolver:
             if (reference is not None and
                     getattr(getattr(reference, "Proxy", None), "Type", None) !=
                     "FCConductor"):
+                # Clearing an invalid link re-enters this callback, so suppress
+                # validation until the corrective assignment has completed.
                 self._validatingReference = True
                 obj.ReferenceConductor = None
                 self._validatingReference = False

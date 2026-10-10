@@ -161,6 +161,8 @@ class FCBoundingBoxIndex:
         expiry = []
         candidates = []
         for xmin, xmax, serial, item, bbox in self.entries:
+            # Expire boxes left of the sweep position, allowing for tolerance.
+            # Test the remaining candidates in all three axes.
             while expiry and expiry[0][0] + tol < xmin:
                 _old_xmax, old_serial = heapq.heappop(expiry)
                 active.pop(old_serial, None)
@@ -176,6 +178,8 @@ class FCBoundingBoxIndex:
         events = [(entry[0], 0, entry) for entry in self.entries]
         events.extend((entry[0], 1, entry) for entry in other.entries)
         events.sort(key=lambda event: (event[0], event[1], event[2][2]))
+        # Keep the two populations separate: this query must not return pairs
+        # within either input set, unlike the self-intersection sweep above.
         active = ({}, {})
         expiry = []
         candidates = []
@@ -636,6 +640,8 @@ def _edge_groups(raw_faces):
 # faces traverse their shared edge in opposite directions.
 def _connected_orientation(raw_faces):
     groups = _edge_groups(raw_faces)
+    # Store the required relative flip across each edge, not a guessed global
+    # normal; the solid classifier establishes outward direction later.
     adjacency = [[] for _raw in raw_faces]
     invalid_edges = set()
     nonmanifold_edges = set()
@@ -656,6 +662,8 @@ def _connected_orientation(raw_faces):
 
     components = []
     flips = [None] * len(raw_faces)
+    # Propagate flips through each connected component. A contradictory loop
+    # stays a diagnostic instead of silently choosing one of its orientations.
     conflicts = set()
     for seed in range(len(raw_faces)):
         if flips[seed] is not None:
@@ -876,6 +884,8 @@ def _normalize_entity_solid_union(raw_faces, classifier_solids,
     surface_faces = [
         raw for raw in raw_faces
         if raw.classifier_solid is None]
+    # The union replaces filled solids only; explicitly assigned open surfaces
+    # remain boundaries in their own right and must not disappear with the union.
     if not solid_faces:
         return raw_faces, classifier_solids
 
@@ -894,6 +904,8 @@ def _normalize_entity_solid_union(raw_faces, classifier_solids,
         normalized_solids.append(classifier)
 
         for face_index, face in enumerate(solid.Faces):
+            # Boolean faces no longer share the source's identity. Recover
+            # provenance so later errors still point to a useful Base assignment.
             provenance = _best_fused_face_source(
                 face, contributors or solid_faces, tolerance)
             if provenance is None:
@@ -931,6 +943,8 @@ def _build_entity(fc_object, context, prepared_sources=None):
 
     (component_indices, local_flips, groups, invalid_edges,
      nonmanifold_edges, conflicts) = _connected_orientation(raw_faces)
+    # Associate topology defects with their connected component before building
+    # its public records; one bad shell must not taint unrelated source pieces.
     face_to_component = {}
     for component_index, indices in enumerate(component_indices):
         for face_index in indices:
@@ -966,6 +980,8 @@ def _build_entity(fc_object, context, prepared_sources=None):
         component_diagnostics = []
 
         if has_solid:
+            # Local edge consistency permits either overall direction. Use the
+            # solid classifier to select outward before applying user reversal.
             outward = _component_global_flip(
                 raw_faces, indices, local_flips,
                 context.geometry_tolerance)

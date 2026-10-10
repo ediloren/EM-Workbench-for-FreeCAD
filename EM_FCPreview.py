@@ -137,6 +137,8 @@ def syncFCPreviewDimension(vobj, dimension=None):
         from EM_FCDielectric import EMFCDIELECTRIC_DEF_COLOR as body
         from EM_FCDielectric import EMFCDIELECTRIC_DEF_LINECOLOR as edge
     previous, desired = (edge, body) if dimension == "2D" else (body, edge)
+    # Translate only a recognized default, not an arbitrary user-selected color.
+    # In 2D the line represents the body; in 3D it is the darker panel outline.
     if all(abs(a-b) < 1e-6 for a, b in zip(_line_color(vobj)[:3], previous)):
         vobj.LineColor = desired
 
@@ -154,6 +156,8 @@ def attachFCPanelPreview(view_provider, vobj, dielectric=False):
     good = _geometry_node(
         face_color, _line_color(vobj), transparency)
     bad_color = tuple(vobj.BadPanelColor)
+    # Keep diagnostic geometry in its own branch so editing the object's
+    # ordinary color does not replace the error highlight color.
     bad = _geometry_node(bad_color, bad_color, transparency)
     panel_switch.addChild(good["separator"])
     panel_switch.addChild(bad["separator"])
@@ -213,6 +217,7 @@ def _set_panel_geometry(node, panels):
         points.extend(panel.points)
         indices = list(range(offset, offset + len(panel.points))) + [-1]
         if panel.kind == "S":
+            # A segment is already the complete element, not a degenerate face.
             line_indices.extend(indices)
         else:
             face_indices.extend(indices)
@@ -260,6 +265,7 @@ def _reference_arrow_panels(panels):
     if not eligible:
         return []
     if all(panel.kind == "S" for panel in eligible):
+        # 2D contours are normally small enough to show every material-side aid.
         return eligible
     centers = [_panel_center(panel) for panel in eligible]
     minima = tuple(min(center[axis] for center in centers) for axis in range(3))
@@ -313,6 +319,8 @@ def _set_references(state, panelization, fc_object):
         if direction.Length <= 1.0e-12:
             continue
         direction.normalize()
+        # Preserve the solver-side direction but replace its numerical offset
+        # with a visible arrow length controlled by ArrowScale.
         tip = start + direction * length
         side = direction.cross(FreeCAD.Vector(0.0, 0.0, 1.0))
         if side.Length <= 1.0e-9:
@@ -400,6 +408,8 @@ def setFCPanelizationPreview(view_provider, panelization):
     bad = [panel for panel in panels if panel.problematic]
     _set_panel_geometry(state["good"], good)
     _set_panel_geometry(state["bad"], bad)
+    # Use the snapshot dimension rather than the live solver setting: changing
+    # settings alone does not replace the geometry currently being inspected.
     state["has_data"] = bool(panels)
     state["panelization"] = panelization
     state["two_d"] = (panelization is not None and
@@ -408,6 +418,8 @@ def setFCPanelizationPreview(view_provider, panelization):
         syncFCPreviewDimension(view_provider.VObject, panelization.context.dimension)
     _set_color(state["good"]["line_material"], _line_color(view_provider.VObject))
     transparency = _shape_appearance(view_provider.VObject)[1]
+    # Dielectric face transparency is useful in 3D, but would wash out the only
+    # geometry in a 2D preview. Keep both normal and diagnostic segments opaque.
     for branch in (state["good"], state["bad"]):
         _set_transparency(branch["line_material"],
                           0.0 if state["two_d"] else transparency)
@@ -433,6 +445,8 @@ def onFCPanelPreviewChanged(view_provider, prop):
     elif prop == "LineColor":
         _set_color(state["good"]["line_material"], tuple(vobj.LineColor))
     elif prop == "LineMaterial":
+        # Newer Part view providers edit LineMaterial instead of only emitting
+        # a legacy LineColor change; both controls must update the same preview.
         _set_color(state["good"]["line_material"], _line_color(vobj))
     elif prop == "BadPanelColor":
         color = tuple(vobj.BadPanelColor)

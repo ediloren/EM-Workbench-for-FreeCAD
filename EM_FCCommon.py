@@ -134,6 +134,8 @@ def fcBaseReferencesOverlap(first, second):
     deliberately left to the panelization validator.
     """
     second_by_source = {}
+    # Compare persistent assignments here, not geometric coincidence. Two
+    # different CAD objects can overlap and still need the later Boolean checks.
     for source, subelements in normalizeFCBase(second):
         second_by_source.setdefault(id(source), set()).update(subelements)
     for source, subelements in normalizeFCBase(first):
@@ -167,6 +169,7 @@ def mergeFCBase(base, additions):
             merged.append([source, names])
             continue
         current = merged[positions[key]][1]
+        # The empty subelement names the whole shape and supersedes its faces.
         if "" in current or "" in names:
             merged[positions[key]][1] = [""]
         else:
@@ -223,6 +226,8 @@ def _fc_subshape(source, subelement):
             return shape
     except (AttributeError, RuntimeError):
         pass
+    # Older objects may not resolve subelements through getSubObject; retain
+    # the direct Shape lookup without turning a missing link into an exception.
     try:
         return source.Shape.getElement(subelement)
     except (AttributeError, RuntimeError):
