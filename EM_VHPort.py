@@ -168,7 +168,7 @@ class _VHPort:
         # so we must "re-attach" (re-create) the 'self.Objects'
         if not hasattr(self,"Object"):
             self.Object = obj
-        if prop == "DeltaDist":
+        if prop in ("DeltaDist", "PosFaces", "NegFaces"):
             self.flagVoxelizationInvalid()
 
     def execute(self, obj):
@@ -218,7 +218,7 @@ class _VHPort:
                 obj.ViewObject.DiffuseColor = [obj.ViewObject.PosPortColor for x in range(0,len(obj.PosFaces))] + [obj.ViewObject.NegPortColor for x in range(0,len(obj.NegFaces))]
         else:
             # make a dummy empty shape. Representation is through custom coin3d scenegraph.
-            obj.Shape = Part.makeShell([])
+            obj.Shape = Part.Shape()
         #FreeCAD.Console.PrintWarning("_VHPort execute() ends\n") #debug
 
     def getFaces(self,faceSubObjs):
@@ -340,6 +340,11 @@ class _VHPort:
         if solver is None:
              return
         FreeCAD.Console.PrintMessage(translate("EM","Starting voxelization of port ") + self.Object.Label + "...\n")
+        # reset status (otherwise if one of the conditions below
+        # is not fulfilled, the status would remain dirty
+        self.flagVoxelizationInvalid()
+        self.Object.PosVoxelContacts = []
+        self.Object.NegVoxelContacts = []
         # get global parameters from the VHSolver object
         gbbox = solver.Proxy.getGlobalBBox()
         delta = solver.Proxy.getDelta()

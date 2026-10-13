@@ -40,7 +40,7 @@ EMVHSOLVER_DEF_MINFREQ = 1e-6
 EMVHSOLVER_COND_ID_OVERFLOW = 65535
 # allowed .units
 EMVHSOLVER_UNITS = ["km", "m", "cm", "mm", "um", "nm", "in", "mils"]
-EMVHSOLVER_UNITS_VALS = [1e3, 1, 1e-2, 1e-3, 1e-6, 1e-9, 2.54e-2, 1e-3]
+EMVHSOLVER_UNITS_VALS = [1e3, 1, 1e-2, 1e-3, 1e-6, 1e-9, 2.54e-2, 2.54e-5]
 EMVHSOLVER_DEFUNITS = "um"
 EMVHSOLVER_DEFNHINC = 1
 EMVHSOLVER_DEFNWINC = 1
@@ -238,7 +238,7 @@ class _VHSolver:
             # At load time, if the object is invisible, its boundbox may be different.
             # However, if we knew it was valid at save time, no reason to invalidate it
             if not self.justLoaded:
-                if (not gbbox.isInside(self.bbox)) and (not self.bbox.isInside(gbbox)):
+                if (not gbbox.isInside(self.bbox)) or (not self.bbox.isInside(gbbox)):
                     self.Object.voxelSpaceValid = False
             else:
                 self.justLoaded = False
@@ -292,20 +292,26 @@ class _VHSolver:
         # if the bounding box is invalid, no voxel space, no matter what
         if not self.bbox.isValid():
             self.voxelSpace = np.full((0,0,0), 0, np.int16)
+            self.Object.voxelSpaceValid = False
         # else if voxel space invalid, or forcing recalculation, let's compute it
-        elif (self.voxelSpace.size == 0) or (not self.Object.voxelSpaceValid) or force:
+        elif (self.voxelSpace is None) or (self.voxelSpace.size == 0) or (not self.Object.voxelSpaceValid) or force:
             # create voxel space
             self.voxelSpace = self.createVoxelSpace(self.bbox, self.Object.delta)
-            self.Object.voxelSpaceValid = True
-            # now flag all VHConductor and VHPort voxelizations as invalid
-            # get all the VHConductors
-            conds = [obj for obj in doc.Objects if Draft.getType(obj) == "VHConductor"]
-            for obj in conds:
-                obj.Proxy.flagVoxelizationInvalid()
-            # get all the VHPorts
-            ports = [obj for obj in doc.Objects if Draft.getType(obj) == "VHPort"]
-            for obj in ports:
-                obj.Proxy.flagVoxelizationInvalid()
+            # check if created
+            if self.voxelSpace is None:
+                self.voxelSpace = np.full((0,0,0), 0, np.int16)
+                self.Object.voxelSpaceValid = False
+            else:
+                self.Object.voxelSpaceValid = True
+                # now flag all VHConductor and VHPort voxelizations as invalid
+                # get all the VHConductors
+                conds = [obj for obj in doc.Objects if Draft.getType(obj) == "VHConductor"]
+                for obj in conds:
+                    obj.Proxy.flagVoxelizationInvalid()
+                # get all the VHPorts
+                ports = [obj for obj in doc.Objects if Draft.getType(obj) == "VHPort"]
+                for obj in ports:
+                    obj.Proxy.flagVoxelizationInvalid()
         # return the voxel space (may also be None)
         return self.voxelSpace
 
@@ -430,7 +436,10 @@ class _VHSolver:
             self.bbox = FreeCAD.BoundBox(bboxcoord[0],bboxcoord[1],bboxcoord[2],bboxcoord[3],bboxcoord[4],bboxcoord[5])
             voxelspacedim = dictForJSON['vsDim']
             self.voxelSpace = np.full(voxelspacedim,0,np.int16)
-            voxelSpaceConds = (np.array(dictForJSON['vsX']),np.array(dictForJSON['vsY']),np.array(dictForJSON['vsZ']))
+            voxelSpaceConds = (
+                 np.array(dictForJSON['vsX'], dtype=np.intp),
+                 np.array(dictForJSON['vsY'], dtype=np.intp),
+                 np.array(dictForJSON['vsZ'], dtype=np.intp) )
             self.voxelSpace[voxelSpaceConds] = dictForJSON['vsVals']
             self.Type = dictForJSON['type']
         self.justLoaded = True
