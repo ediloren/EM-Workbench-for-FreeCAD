@@ -734,7 +734,7 @@ class _VHConductor:
             partbox_max = local_vs_max
             # get the center coordinates of our assumed min/max voxel
             min_voxel_center = get_voxel_center(gbbox_min, local_vs_min, delta)
-            max_voxel_center = get_voxel_center(gbbox_min, local_vs_min, delta)
+            max_voxel_center = get_voxel_center(gbbox_min, local_vs_max, delta)
             # make arrays of booleans
             min_too_small = min_voxel_center < bbox_min
             max_too_big = max_voxel_center > bbox_max
@@ -912,7 +912,7 @@ class _VHConductor:
     '''
         self.Object.isVoxelized = isVoxelized
 
-    def serialize(self,fid,isSupercond):
+    def serialize(self, fid, isSupercond, solver):
         ''' Serialize the object to the 'fid' file descriptor
 
         'fid' is the file descriptor
@@ -920,7 +920,6 @@ class _VHConductor:
             superconductor lambda values (even if for some conductors this may be zero)
     '''
         if self.Object.isVoxelized == True:
-            solver = EM.getVHSolver()
             if solver is None:
                  return
             # get global parameters from the VHSolver object

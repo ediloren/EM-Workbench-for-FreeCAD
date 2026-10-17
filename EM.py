@@ -68,6 +68,18 @@ from EM_VHSolver import *
 from EM_VHConductor import *
 from EM_VHPort import *
 from EM_VHInputFile import *
+# FasterCap/FastCap public API.  Persistent object factories are imported first,
+# followed by transient extraction/panelization, export, and import commands.
+# Geometry and panel data stay transient even though their helpers are exposed
+# here for scripted workflows and diagnostics.
+# FasterCap/FastCap specific
+from EM_FCSolver import *
+from EM_FCConductor import *
+from EM_FCDielectric import *
+from EM_FCGeometry import *
+from EM_FCPanelization import *
+from EM_FCExport import *
+from EM_FCImport import *
 
 # for debugging
 #import EM_Globals
@@ -115,3 +127,12 @@ from EM_VHInputFile import *
 #import EM_VHInputFile
 #reload(EM_VHInputFile)
 #from EM_VHInputFile import *
+#import EM_FCSolver
+#reload(EM_FCSolver)
+#from EM_FCSolver import *
+#import EM_FCConductor
+#reload(EM_FCConductor)
+#from EM_FCConductor import *
+#import EM_FCDielectric
+#reload(EM_FCDielectric)
+#from EM_FCDielectric import *

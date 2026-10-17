@@ -46,6 +46,13 @@ class EMWorkbench(Workbench):
         self.emfhtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPath", "EM_FHPlane",
                 "EM_FHPlaneHole", "EM_FHPlaneAddRemoveNodeHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile"]
         self.emvhtools = ["EM_VHSolver", "EM_VHConductor", "EM_VHPort", "EM_VHCondPortVoxelize", "EM_VHVoxelizeAll", "EM_VHInputFile"]
+        # FC tools follow the intended workflow: configure the document, wrap
+        # conductor/dielectric sources, explicitly panelize for inspection, then
+        # export or import solver data.  Panelize precedes Export because export
+        # deliberately consumes the frozen preview rather than rebuilding it.
+        self.emfctools = ["EM_FCSolver", "EM_FCConductor",
+                "EM_FCDielectric", "EM_FCPanelize", "EM_FCExport",
+                "EM_FCImport"]
         # draft tools
         # setup menus
         self.draftcmdList = ["Draft_Line","Draft_Rectangle"]
@@ -63,9 +70,10 @@ class EMWorkbench(Workbench):
         def QT_TRANSLATE_NOOP(scope, text): return text
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. FastHenry tools"),self.emfhtools)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. VoxHenry tools"),self.emvhtools)
+        self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","E.M. FasterCap / FastCap tools"),self.emfctools)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft creation tools"),self.draftcmdList)
         self.appendToolbar(QT_TRANSLATE_NOOP("Workbench","Draft mod tools"),self.draftmodtools)
-        self.appendMenu(QT_TRANSLATE_NOOP("EM","&EM"),self.emfhtools + self.emvhtools + self.emtools)
+        self.appendMenu(QT_TRANSLATE_NOOP("EM","&EM"),self.emfhtools + self.emvhtools + self.emfctools + self.emtools)
         self.appendMenu(QT_TRANSLATE_NOOP("EM","&Draft"),self.draftcmdList+self.draftmodtools+self.treecmdList)
         self.appendMenu([QT_TRANSLATE_NOOP("EM","&Draft"),QT_TRANSLATE_NOOP("arch","Snapping")],self.snapList)
         #FreeCADGui.addIconPath(":/icons")

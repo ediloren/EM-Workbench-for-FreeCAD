@@ -134,7 +134,7 @@ def createVHInputFile(doc=None,filename=None,folder=None):
         conds = [obj for obj in doc.Objects if Draft.getType(obj) == "VHConductor"]
         for cond in conds:
             FreeCAD.Console.PrintMessage(QT_TRANSLATE_NOOP("EM","  Exporting conductor ") + "'" + cond.Label + "'\n")
-            cond.Proxy.serialize(fid, isSupercond)
+            cond.Proxy.serialize(fid, isSupercond, solver)
         fid.write("EndVoxelList\n")
         fid.write("\n")
         # then the ports
@@ -156,7 +156,7 @@ class _CommandVHInputFile:
         return {'Pixmap'  : os.path.join(iconPath, 'EM_VHInputFile.svg') ,
                 'MenuText': QT_TRANSLATE_NOOP("EM_VHInputFile","VHInputFile"),
                 'Accel': "E, I",
-                'ToolTip': QT_TRANSLATE_NOOP("EM_VHInputFile","Creates a FastHenry input file")}
+                'ToolTip': QT_TRANSLATE_NOOP("EM_VHInputFile","Creates a VoxHenry input file")}
 
     def IsActive(self):
         return not FreeCAD.ActiveDocument is None

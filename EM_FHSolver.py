@@ -35,7 +35,7 @@ __url__ = "http://www.fastfieldsolvers.com"
 EMFHSOLVER_DEF_SEGSIGMA = 5.8e7
 # allowed .units
 EMFHSOLVER_UNITS = ["km", "m", "cm", "mm", "um", "in", "mils"]
-EMFHSOLVER_UNITS_VALS = [1e3, 1, 1e-2, 1e-3, 1e-6, 2.54e-2, 1e-3]
+EMFHSOLVER_UNITS_VALS = [1e3, 1, 1e-2, 1e-3, 1e-6, 2.54e-2, 2.54e-5]
 EMFHSOLVER_DEFUNITS = "mm"
 EMFHSOLVER_DEFNHINC = 1
 EMFHSOLVER_DEFNWINC = 1
