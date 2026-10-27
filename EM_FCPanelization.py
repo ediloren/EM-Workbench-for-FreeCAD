@@ -1,15 +1,32 @@
 #***************************************************************************
 #*                                                                         *
-#*   Copyright (c) 2026                                                    *
-#*   FastFieldSolvers S.R.L., http://www.fastfieldsolvers.com              *
+#*   Copyright (c) 2026 FastFieldSolvers                                   *
+#*   Enrico Di Lorenzo                                                     *
+#*   https://www.fastfieldsolvers.com                                      *
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
 #*   it under the terms of the GNU Lesser General Public License (LGPL)    *
-#*   as published by the Free Software Foundation; either version 2 of     *
+#*   as published by the Free Software Foundation; either version 2.1 of   *
 #*   the License, or (at your option) any later version.                   *
 #*   for detail see the LICENCE text file.                                 *
 #*                                                                         *
+#*   This program is distributed in the hope that it will be useful,       *
+#*   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+#*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+#*   GNU Library General Public License for more details.                  *
+#*                                                                         *
+#*   You should have received a copy of the GNU Library General Public     *
+#*   License along with this program; if not, write to the Free Software   *
+#*   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+#*   USA                                                                   *
+#*                                                                         *
 #***************************************************************************
+
+from __future__ import annotations
+
+__title__="FreeCAD E.M. Workbench FasterCap / FastCap panelization functions"
+__author__ = "FastFieldSolvers - Enrico Di Lorenzo"
+__url__ = "http://www.fastfieldsolvers.com"
 
 
 """Transient FasterCap / FastCap surface resolution and panelization.
@@ -35,8 +52,6 @@ creates one document object per panel and never runs from FeaturePython execute.
 # - The document-keyed cache is guarded by solver and source signatures.
 # - Preview uses shared Coin graphs; panels never become document objects.
 # - Diagnostics accumulate so one run exposes all actionable model problems.
-
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 import math

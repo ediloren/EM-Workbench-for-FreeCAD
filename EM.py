@@ -4,11 +4,11 @@
 #*   Efficient Power Conversion Corporation, Inc.  http://epc-co.com       *
 #*                                                                         *
 #*   Developed by FastFieldSolvers S.R.L. under contract by EPC            *
-#*   http://www.fastfieldsolvers.com                                       *
+#*   https://www.fastfieldsolvers.com                                      *
 #*                                                                         *
 #*   This program is free software; you can redistribute it and/or modify  *
 #*   it under the terms of the GNU Lesser General Public License (LGPL)    *
-#*   as published by the Free Software Foundation; either version 2 of     *
+#*   as published by the Free Software Foundation; either version 2.1 of   *
 #*   the License, or (at your option) any later version.                   *
 #*   for detail see the LICENCE text file.                                 *
 #*                                                                         *
@@ -25,7 +25,7 @@
 #***************************************************************************
 
 __title__="FreeCAD E.M. Workbench API"
-__author__ = "FastFieldSolvers S.R.L."
+__author__ = "FastFieldSolvers - Enrico Di Lorenzo"
 __url__ = "http://www.fastfieldsolvers.com"
 
 ## \defgroup EM E.M.
