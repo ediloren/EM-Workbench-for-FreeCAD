@@ -40,7 +40,7 @@ import EM
 
 if FreeCAD.GuiUp:
     import FreeCADGui
-    from PySide import QtCore, QtGui
+    from PySide import QtCore, QtWidgets
     from DraftTools import translate
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
@@ -71,9 +71,16 @@ class _CommandAbout:
 
         if FreeCAD.GuiUp:
             # Simple QMessageBox providing "about" informaiton
-            diag = QtGui.QMessageBox(QtGui.QMessageBox.Information, translate("EM_About","About ElectroMagnetic workbench"), msg)
+            diag = QtWidgets.QMessageBox(FreeCADGui.getMainWindow())
+            diag.setIcon(QtWidgets.QMessageBox.Information)
+            diag.setWindowTitle(translate("EM_About","About ElectroMagnetic workbench"))
+            diag.setText(msg)
+            diag.setStandardButtons(QtWidgets.QMessageBox.Ok)
             diag.setWindowModality(QtCore.Qt.ApplicationModal)
-            diag.exec_()
+            if hasattr(diag, "exec"):
+                diag.exec()
+            else:
+                diag.exec_()
         else:
             FreeCAD.Console.PrintWarning(msg)
 

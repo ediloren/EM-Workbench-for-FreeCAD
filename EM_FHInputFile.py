@@ -31,11 +31,10 @@ __url__ = "http://www.fastfieldsolvers.com"
 
 import FreeCAD, FreeCADGui, Mesh, Part, MeshPart, Draft, DraftGeomUtils, os
 from FreeCAD import Vector
-from PySide import QtCore, QtGui
 
 if FreeCAD.GuiUp:
     import FreeCADGui
-    from PySide import QtCore, QtGui
+    from PySide import QtCore, QtWidgets
     from DraftTools import translate
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
@@ -111,12 +110,15 @@ def createFHInputFile(doc=None,filename=None,folder=None):
     # check if exists
     if os.path.isfile(folder + os.sep + filename):
         # filename already exists! Check if overwrite
-        diag = QtGui.QMessageBox()
+        diag = QtWidgets.QMessageBox(FreeCADGui.getMainWindow())
         diag.setText("File '" + str(filename) + "' exists in the folder '" + str(folder) + "'")
         diag.setInformativeText("Do you want to overwrite?")
-        diag.setStandardButtons(QtGui.QMessageBox.Cancel | QtGui.QMessageBox.Ok)
-        ret = diag.exec_()
-        if ret == QtGui.QMessageBox.Cancel:
+        diag.setStandardButtons(QtWidgets.QMessageBox.Cancel | QtWidgets.QMessageBox.Ok)
+        if hasattr(diag, "exec"):
+            ret = diag.exec()
+        else:
+            ret = diag.exec_()
+        if ret != QtWidgets.QMessageBox.Ok:
             return
     FreeCAD.Console.PrintMessage(QT_TRANSLATE_NOOP("EM","Exporting to FastHenry file ") + "'" + folder + os.sep + filename + "'\n")
     with open(folder + os.sep + filename, 'w') as fid:

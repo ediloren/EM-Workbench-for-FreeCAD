@@ -38,7 +38,7 @@ from FreeCAD import Vector
 
 if FreeCAD.GuiUp:
     import FreeCADGui
-    from PySide import QtCore, QtGui
+    from PySide import QtCore, QtWidgets
     from DraftTools import translate
     from PySide.QtCore import QT_TRANSLATE_NOOP
 else:
@@ -345,13 +345,12 @@ class _CommandFHNode:
 
     def taskbox(self):
         "sets up a taskbox widget"
-        w = QtGui.QWidget()
-        ui = FreeCADGui.UiLoader()
+        w = QtWidgets.QWidget()
         w.setWindowTitle(translate("EM","FHNode options"))
-        grid = QtGui.QGridLayout(w)
+        grid = QtWidgets.QGridLayout(w)
 
-        label4 = QtGui.QLabel(translate("EM","Con&tinue"))
-        value4 = QtGui.QCheckBox()
+        label4 = QtWidgets.QLabel(translate("EM","Con&tinue"))
+        value4 = QtWidgets.QCheckBox()
         value4.setObjectName("ContinueCmd")
         value4.setLayoutDirection(QtCore.Qt.RightToLeft)
         label4.setBuddy(value4)
@@ -360,7 +359,7 @@ class _CommandFHNode:
             self.continueCmd = FreeCADGui.draftToolBar.continueMode
         grid.addWidget(label4,1,0,1,1)
         grid.addWidget(value4,1,1,1,1)
-        QtCore.QObject.connect(value4,QtCore.SIGNAL("stateChanged(int)"),self.setContinue)
+        value4.toggled.connect(self.setContinue)
         return w
 
     def setContinue(self,i):
