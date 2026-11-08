@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "freecad-em-workbench"
+version = "3.0.0"
+description = "ElectroMagnetic workbench for FreeCAD: FastHenry, VoxHenry, FasterCap and FastCap"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "LGPL-2.1-or-later"
+license-files = ["LICENCE.txt"]
+authors = [{name = "FastFieldSolvers - Enrico Di Lorenzo"}]
+dependencies = ["numpy", "scipy"]
+
+[project.urls]
+Repository = "https://github.com/ediloren/EM-Workbench-for-FreeCAD"
+Issues = "https://github.com/ediloren/EM-Workbench-for-FreeCAD/issues"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["freecad/EM"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"Resources" = "freecad/EM/Resources"
+"Documentation" = "freecad/EM/Documentation"
+"package.xml" = "freecad/EM/package.xml"
+"LICENCE.txt" = "freecad/EM/LICENCE.txt"
+
+[tool.hatch.build.targets.sdist]
+include = ["/freecad/EM", "/Resources", "/Documentation", "/tests", "/README.md", "/CHANGELOG.md", "/LICENCE.txt", "/package.xml", "/pyproject.toml"]

@@ -1,1 +1,4 @@
-/__pycache__
+__pycache__/
+# Keep local FreeCAD installations ignored, but track the addon namespace.
+/freecad/*
+!/freecad/EM/

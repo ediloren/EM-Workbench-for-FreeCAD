@@ -6,16 +6,24 @@
   <date>2026-10-17</date>
   <freecadmin>1.0.0</freecadmin>
   <maintainer email="enrico dot di_lorenzo at fastfieldsolvers dot com">Enrico Di Lorenzo</maintainer>
-  <license file="LICENCE.txt">LGPL-2.1</license>
+  <license file="LICENCE.txt">LGPL-2.1-or-later</license>
   <url type="repository" branch="master">https://github.com/ediloren/EM-Workbench-for-FreeCAD</url>
   <url type="website">https://github.com/ediloren/EM-Workbench-for-FreeCAD</url>
   <url type="bugtracker">https://github.com/ediloren/EM-Workbench-for-FreeCAD/issues</url>
-  <icon>Resources/EMWorkbench.svg</icon>
+  <url type="readme">https://raw.githubusercontent.com/ediloren/EM-Workbench-for-FreeCAD/master/README.md</url>
+  <url type="documentation">https://github.com/ediloren/EM-Workbench-for-FreeCAD/tree/master/Documentation</url>
+  <pythonmin>3.10</pythonmin>
+  <depend type="internal">draft</depend>
+  <depend type="internal">part</depend>
+  <depend type="internal">mesh</depend>
+  <depend type="python">numpy</depend>
+  <depend type="python">scipy</depend>
+  <icon>Resources/Icons/EMWorkbench.svg</icon>
 
   <content>
     <workbench>
       <classname>EMWorkbench</classname>
-      <subdirectory>./</subdirectory>
+      <subdirectory>freecad/EM</subdirectory>
     </workbench>
   </content>
 
