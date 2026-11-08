@@ -27,4 +27,4 @@ only-include = ["freecad/EM"]
 "LICENCE.txt" = "freecad/EM/LICENCE.txt"
 
 [tool.hatch.build.targets.sdist]
-include = ["/freecad/EM", "/Resources", "/Documentation", "/tests", "/README.md", "/CHANGELOG.md", "/LICENCE.txt", "/package.xml", "/pyproject.toml"]
+include = ["/freecad/EM", "/Resources", "/Documentation", "/tests", "/README.md", "/LICENCE.txt", "/package.xml", "/pyproject.toml"]
