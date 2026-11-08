@@ -1,4 +1,6 @@
 __pycache__/
 # Keep local FreeCAD installations ignored, but track the addon namespace.
-/freecad/*
-!/freecad/EM/
+/freecad_exe
+/FastCap2
+/FasterCap
+
