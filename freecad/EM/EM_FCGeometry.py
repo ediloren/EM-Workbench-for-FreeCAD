@@ -1090,10 +1090,12 @@ def _build_entity(fc_object, context, prepared_sources=None):
         component_solids = _unique_identity(
             [raw_faces[index].classifier_solid for index in indices
              if raw_faces[index].classifier_solid is not None])
+        # "shell" is an OCC geometry object, not a subprocess shell option.
+        # The below "nosec B604" is used to suppress the false positive from Bandit tool
         component = FCGeometryComponent(
             entity=None, index=component_index, faces=faces,
             classifier_solids=component_solids,
-            source_references=component_sources, shell=normalized_shell,
+            source_references=component_sources, shell=normalized_shell,  # nosec B604
             bbox=_combine_bboxes(faces), closed=closed,
             orientable=orientable, orientation_reliable=reliable,
             diagnostics=component_diagnostics)
