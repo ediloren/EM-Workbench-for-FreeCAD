@@ -64,7 +64,7 @@ Access to the binary and source code download pages on [FastFieldSolvers](https:
 ## Documentation
 
 The [EM Workbench](https://wiki.freecad.org/EM_Workbench) pages describe the EM Workbench and its support for FastHenry.
-The [VoxHenry guide](Documentation/VH_guide.htm) and [FasterCap/FastCap guide](Documentation/FC_guide.htm) provisionally describe the solver workflows, waiting to be integrated in the wiki.
+The [FastHenry guide](Documentation/FH_guide.htm), [VoxHenry guide](Documentation/VH_guide.htm), and [FasterCap/FastCap guide](Documentation/FC_guide.htm) are supplemental documents, describing the solver workflows.
 
 ## Existing FastHenry and VoxHenry saved files
 

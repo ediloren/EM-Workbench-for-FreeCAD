@@ -555,7 +555,7 @@ class _CommandFCExport:
 
     def GetResources(self):
         return {
-            "Pixmap": os.path.join(iconPath, "EM_FCExport.svg"),
+            "Pixmap": os.path.join(iconPath, "EM_FCInputFile.svg"),
             "MenuText": QT_TRANSLATE_NOOP(
                 "EM_FCExport", "Export FasterCap / FastCap"),
             "Accel": "E, L",
