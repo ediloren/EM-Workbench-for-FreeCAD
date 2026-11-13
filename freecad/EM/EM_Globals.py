@@ -32,7 +32,7 @@ __url__ = "http://www.fastfieldsolvers.com"
 # defines
 #
 # version information
-EM_VERSION = '3.0.0'
+EM_VERSION = '3.1.0'
 # default node color
 EMFHNODE_DEF_NODECOLOR = (1.0,0.0,0.0)
 # tolerance in degrees when verifying if vectors are parallel
