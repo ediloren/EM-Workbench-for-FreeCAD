@@ -50,11 +50,11 @@ class EMWorkbench(FreeCADGui.Workbench):
                        EM_FHPath, EM_FHPlane, EM_FHPlaneHole, EM_FHEquiv,
                        EM_FHPort, EM_FHInputFile, EM_VHSolver, EM_VHConductor,
                        EM_VHPort, EM_VHInputFile, EM_FCSolver, EM_FCConductor,
-                       EM_FCDielectric, EM_FCExport, EM_FCImport)
+                       EM_FCDielectric, EM_FCExport, EM_FCImport, EM_FHImport)
         # E.M. tools
         self.emtools = ["EM_About"]
         self.emfhtools = ["EM_FHSolver", "EM_FHNode", "EM_FHSegment", "EM_FHPath", "EM_FHPlane",
-                "EM_FHPlaneHole", "EM_FHPlaneAddRemoveNodeHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile"]
+                "EM_FHPlaneHole", "EM_FHPlaneAddRemoveNodeHole", "EM_FHEquiv", "EM_FHPort", "EM_FHInputFile", "EM_FHImport"]
         self.emvhtools = ["EM_VHSolver", "EM_VHConductor", "EM_VHPort", "EM_VHCondPortVoxelize", "EM_VHVoxelizeAll", "EM_VHInputFile"]
         # FC tools follow the intended workflow: configure the document, wrap
         # conductor/dielectric sources, explicitly panelize for inspection, then

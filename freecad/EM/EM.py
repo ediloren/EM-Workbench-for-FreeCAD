@@ -199,6 +199,7 @@ _EXPORTS = {
     'extractFCGeometry': 'EM_FCGeometry',
     'getAbsCoordBodyPart': 'EM_Globals',
     'getFCInputFiles': 'EM_FCImport',
+    'getFHInputFiles': 'EM_FHImport',
     'getFCPanelization': 'EM_FCPanelization',
     'getFCPanelizationSignature': 'EM_FCPanelization',
     'getFCSolver': 'EM_FCSolver',
@@ -206,6 +207,7 @@ _EXPORTS = {
     'getVHSolver': 'EM_Globals',
     'get_voxel_center': 'EM_VHConductor',
     'importFCInputFile': 'EM_FCImport',
+    'importFHInputFile': 'EM_FHImport',
     'intersects_box': 'EM_VHConductor',
     'invalidateFCPanelizationForObject': 'EM_FCPanelization',
     'makeFCConductor': 'EM_FCConductor',
@@ -227,6 +229,7 @@ _EXPORTS = {
     'makeVHPortFromSel': 'EM_VHPort',
     'makeVHSolver': 'EM_VHSolver',
     'openFCTextFiles': 'EM_FCImport',
+    'openFHTextFiles': 'EM_FHImport',
 }
 __all__ = tuple(_EXPORTS)
 

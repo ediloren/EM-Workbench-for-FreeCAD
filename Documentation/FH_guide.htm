@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>FastHenry workflow</title>
+  <style>
+    body { max-width: 980px; margin: 2em auto; padding: 0 1em; font-family: sans-serif; line-height: 1.45; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #aaa; padding: 0.45em; text-align: left; vertical-align: top; }
+    code { white-space: nowrap; }
+    pre { padding: 1em; background: #f4f4f4; overflow-x: auto; }
+    pre code { white-space: pre; }
+  </style>
+</head>
+<body>
+  <h1>Creating and inspecting FastHenry models</h1>
+  <p>The FH tools prepare conductor models for FastHenry resistance and inductance extraction. Commands are available in the <strong>E.M. FastHenry tools</strong> toolbar and the <strong>EM</strong> menu. There are two workflows:</p>
+  <table>
+    <thead><tr><th>Starting point</th><th>Workflow</th></tr></thead>
+    <tbody>
+      <tr><td>New model built in FreeCAD</td><td>Create native FH nodes, segments, paths, uniform planes and ports; configure FHSolver; then export with FHInputFile. Edit the model through its FreeCAD properties and linked base geometry.</td></tr>
+      <tr><td>Existing FastHenry input file</td><td>Use <strong>Import FastHenry file</strong> to visualize its geometry, including nonuniform planes. Edit the source and referenced plane-discretization files in the highlighted text editors, then use <strong>Save &amp; Reload</strong>. The import creates visualization geometry rather than native FH solver primitives.</td></tr>
+    </tbody>
+  </table>
+  <p>For the native workflow, follow sections 1&ndash;8. For importing and editing existing files, see <a href="#import">section 9</a>. <a href="#scripting">Section 10</a> covers the Python API. FastHenry is a separate solver installation; neither exporting nor importing geometry starts a simulation.</p>
+
+  <h2 id="geometry">1. Prepare the geometry and choose a scale</h2>
+  <p>FastHenry represents conductors as straight segments of rectangular cross-section connected at nodes. Build the intended current and return paths explicitly. A CAD solid alone is not automatically converted into an FH conductor: use FHSegment for a straight centreline, FHPath for a connected sequence of edges, and FHPlane for a uniform rectangular reference plane.</p>
+  <ul>
+    <li>Use positive segment widths, heights and plane thicknesses, and distinct endpoints for every segment.</li>
+    <li>Keep gaps and junctions intentional. Touching or overlapping displayed shapes do not establish electrical connections; connections follow node references and FHEquiv relationships.</li>
+    <li>Use one native FHSolver per document. Keep unrelated native FH models in separate documents: FHInputFile exports the supported FH objects throughout the document, regardless of selection or visibility.</li>
+    <li>Give exported objects distinct, simple Labels without whitespace. Labels are used to construct node, segment and plane names in the input file.</li>
+  </ul>
+  <p><strong>Native FH dimensions are exported as numerical values in FHSolver.Units.</strong> For ordinary FreeCAD millimetre geometry, keep Units = <strong>mm</strong>. A numerical length of 10 with Units = mm represents 10 mm; the same coordinates with Units = um represent 10 micrometres. Changing Units does not resize the CAD geometry or automatically rescale existing conductivity values. An explicitly entered FreeCAD quantity is first converted to its internal numerical length before export.</p>
+  <p>FHImport uses a different scale convention: it reads the file's units and converts the displayed geometry to physical FreeCAD millimetres. No FHSolver is needed for that import.</p>
+
+  <h2 id="solver">2. Configure FHSolver</h2>
+  <p>Create an <strong>FHSolver</strong> in the active document and inspect its Data properties before exporting. If several exist, FHInputFile uses the first one it finds.</p>
+  <table>
+    <thead><tr><th>Property</th><th>User choice</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Units</strong></td><td>FastHenry length unit: km, m, cm, mm, um, in or mils. The default is mm. This controls the physical interpretation of exported numerical dimensions.</td></tr>
+      <tr><td><strong>Sigma</strong></td><td>Default conductivity in <code>1/(Ohm &times; selected length unit)</code>. Newly created solvers use copper, scaled for the selected unit at creation: 5.8e7 for m, 5.8e4 for mm, or 58 for um. Recheck Sigma after changing Units.</td></tr>
+      <tr><td><strong>nhinc / nwinc</strong></td><td>Default number of parallel filaments through segment height and width. Both default to 1. Use positive integers. Increase these to resolve skin and proximity effects.</td></tr>
+      <tr><td><strong>rh / rw</strong></td><td>Default grading ratios for filament sizes through height and width. Both default to 2; 1 gives equal subdivision. The native workbench properties are integers, although FastHenry input files can contain real-valued ratios.</td></tr>
+      <tr><td><strong>fmin / fmax</strong></td><td>Minimum and maximum frequencies in Hz. Defaults are 1 and 1e9. For a logarithmic sweep use positive frequencies and fmax at least fmin. For a single nonzero frequency set both to that value. In the bundled solver, fmin = 0 requests the DC case only.</td></tr>
+      <tr><td><strong>ndec</strong></td><td>Desired logarithmic frequency steps per decade; default 1. Use a positive value. Successive frequencies differ by <code>10^(1/ndec)</code>, so fmax is not necessarily a sampled point.</td></tr>
+      <tr><td><strong>Folder / Filename</strong></td><td>Export destination. Defaults are the user's home folder and <code>fasthenry_input_file.inp</code>. Include the desired extension in Filename.</td></tr>
+    </tbody>
+  </table>
+  <p>To convert a conductivity from S/m, multiply it by the number of metres per selected length unit. For example, copper at 5.8e7 S/m becomes <code>5.8e7 &times; 0.001 = 5.8e4</code> for .units mm. Native Sigma properties are plain numeric values, not automatically converted material quantities.</p>
+
+  <h2 id="segments">3. Create FHNodes and FHSegments</h2>
+  <ol>
+    <li>Use <strong>FHNode</strong> to place a node interactively. Alternatively, select Draft Point objects and create FHNodes from their positions.</li>
+    <li>Inspect each node's <strong>X</strong>, <strong>Y</strong>, <strong>Z</strong> and Placement. Those coordinates determine its exported position.</li>
+    <li>Select two FHNodes and click <strong>FHSegment</strong>. Check <strong>NodeStart</strong> and <strong>NodeEnd</strong>.</li>
+    <li>Alternatively, select a Draft Line and create an FHSegment from it. The command creates endpoint FHNodes and links the line as <strong>Base</strong>. With no suitable selection, FHSegment prompts for two points and creates the nodes and segment.</li>
+    <li>Set <strong>Width</strong> and <strong>Height</strong>; their defaults are 0.2 in numerical CAD length units. Use the segment's positive <strong>Sigma</strong>, <strong>nhinc</strong>, <strong>nwinc</strong>, <strong>rh</strong> and <strong>rw</strong> values to override the solver defaults. Zero values for these override properties are omitted from the export, allowing the defaults to apply.</li>
+  </ol>
+  <p><strong>ww</strong> specifies the cross-section width direction. Leave it zero for the FastHenry default: width lies in the global XY plane perpendicular to the segment, with the X direction used for a vertical segment. For an explicit orientation, supply a nonzero direction perpendicular to the centreline and inspect the result. Endpoint order defines a reference direction; it does not prescribe the solved current.</p>
+  <p>A segment based on a line follows the Base endpoints. Editing its FHNodes independently can be undone by the next recompute because the Base remains authoritative. For a segment created directly between FHNodes, edit those nodes to move its endpoints.</p>
+
+  <h2 id="paths">4. Create FHPaths from connected edges</h2>
+  <p>Select a sketch, Draft wire, or other supported shape containing edges, then click <strong>FHPath</strong>. The tool sorts the edges, creates FHNodes and displays a series of rectangular segments. Its <strong>Nodes</strong> list exposes the generated nodes for electrical connections. The exporter writes ordinary node and segment statements for the path.</p>
+  <p>Set Width, Height, Sigma, ww and the filament parameters as for FHSegment. A path uses one set of those properties for all its segments. Use separate paths or segments when cross-sections or materials change.</p>
+  <p><strong>Discr</strong> controls subdivision of curved edges; the default is 3. Straight line edges are not subdivided by this setting, and small circular or elliptical edges can remain single chords relative to the cross-section size. Inspect the actual displayed approximation rather than assuming every curve receives exactly Discr segments. Recompute after changing Base or Discr; another recompute may be needed after generated nodes are created.</p>
+  <p>Use a connected edge sequence. FHPath can insert connecting segments across gaps between disconnected edges. For a closed loop, inspect the first and last generated nodes and use an explicit FHEquiv if they are distinct objects representing the same electrical junction. Generated nodes can change when the path is edited; recheck attached ports and connections afterward.</p>
+
+  <h2 id="connections">5. Define electrical connections and ports</h2>
+  <p>Two segments are directly connected when they reference the same FHNode. Separate FHNodes at identical coordinates remain separate electrical nodes until equivalenced. Avoid relying on visible contact between segment shells.</p>
+  <ul>
+    <li><strong>FHEquiv:</strong> select at least two FHNodes and click FHEquiv to short them electrically. With more than two selected nodes, the command creates a chain of pairwise equivalences. These export as <code>.equiv</code> statements and do not add a conductor or a resistance.</li>
+    <li><strong>FHPort:</strong> select two FHNodes and click FHPort. Inspect <strong>NodePos</strong> and <strong>NodeNeg</strong>; the first selected node becomes positive and the second negative. A port exports a <code>.external</code> statement defining a terminal pair for impedance extraction.</li>
+    <li>Check each port's node references and the intended current/return network. A port's displayed arrow is a terminal-polarity marker, not a computed current vector or an additional conductor.</li>
+  </ul>
+  <p>Create a separate FHPort for every terminal pair whose impedance or coupling is required. A port alone does not define a conductor between its terminals. The native port exporter writes the node pair but does not currently include an explicit FastHenry port name from the object's Label.</p>
+
+  <h2 id="planes">6. Create uniform reference planes and holes</h2>
+  <ol>
+    <li>Create a <strong>Draft Rectangle</strong> or <strong>Part Box</strong> for the rectangular plane's size and placement.</li>
+    <li>Select it and click <strong>FHPlane</strong>. You may also select existing FHNodes and FHPlaneHoles to adopt when creating the plane.</li>
+    <li>Set <strong>Thickness</strong>. For a Part Box Base, its Height controls and overrides Thickness; for a Draft Rectangle, set Thickness on FHPlane.</li>
+    <li>Set <strong>seg1</strong> and <strong>seg2</strong>, the numbers of grid segments along the plane's local length and width. Defaults are 10 and 10.</li>
+    <li>Set optional <strong>segwid1</strong> and <strong>segwid2</strong> to make the branches narrower than their spacing, for a meshed plane. Zero selects the full-spacing widths. The workbench limits widths to the corresponding spacing.</li>
+    <li>Set positive <strong>Sigma</strong>, <strong>nhinc</strong> and <strong>rh</strong> overrides if required. The plane's nhinc subdivides its thickness; it is distinct from seg1 and seg2.</li>
+  </ol>
+  <p><strong>FineMesh = false</strong> displays a coarse compound of two overlapping boxes. It does not show individual branches or holes. <strong>FineMesh = true</strong> builds the branch geometry, omitting branches incident on nodes removed by holes. The branch boxes remain geometry within one FHPlane object; they are not separate FHSegment objects. <strong>ShowNodes</strong> adds grid-node markers in the fine display. These display settings do not change the exported discretization.</p>
+  <p>Create <strong>FHPlaneHole</strong> objects with Type = <strong>Point</strong>, <strong>Rect</strong> or <strong>Circle</strong>. Set their reference coordinates and, as appropriate, Length/Width or Radius. Point removes a grid node; Rect specifies opposite corners through the reference point and its local Length/Width; Circle specifies a centre and radius. These holes remove discrete plane nodes and branches, rather than performing a continuous Boolean cut in the Base solid.</p>
+  <p>To add nodes or holes later, select the FHPlane and the unassigned FHNodes/FHPlaneHoles, then use <strong>FHPlaneAddRemoveNodeHole</strong>. The command toggles membership: selected nodes or holes already belonging to a plane are removed from it. Inspect the plane's <strong>Nodes</strong> and <strong>Holes</strong> lists after the operation.</p>
+  <p>Adopted node and hole coordinates are relative to the plane Placement and follow its movement; adoption projects their local Z coordinate to zero. Rectangular hole dimensions follow the plane axes. To connect a trace, adopt a node near the intended plane contact and share or equivalence that node with the trace endpoint. The export creates an internal plane-node reference and equivalences it to the ordinary FHNode. FastHenry resolves plane references to nearby discretization nodes, so inspect the grid around contacts and holes.</p>
+  <p>The native FHPlane tool supports <strong>uniform rectangular planes</strong>. For nonuniform planes defined by a binary discretization file or adaptive contacts, use a FastHenry input file and <a href="#import">FHImport</a>. FHImport can display those models without converting them into native FHPlanes.</p>
+
+  <h2 id="discretization">7. Choose and inspect discretization</h2>
+  <p>There are several independent controls:</p>
+  <table>
+    <thead><tr><th>Control</th><th>What it changes</th></tr></thead>
+    <tbody>
+      <tr><td>FHPath Discr</td><td>The straight-segment approximation of a curved centreline.</td></tr>
+      <tr><td>FHPlane seg1 / seg2</td><td>The in-plane network of branches and contact locations in a uniform plane.</td></tr>
+      <tr><td>nhinc / nwinc and rh / rw</td><td>The parallel filaments through each segment cross-section and their size grading. For a plane, nhinc and rh control thickness subdivision.</td></tr>
+      <tr><td>Nonuniform file and contact statements</td><td>The nonuniform in-plane partition and resulting segment widths and offsets, edited through the input files.</td></tr>
+    </tbody>
+  </table>
+  <p>The ordinary segment and path displays show conductor envelopes, not individual cross-section filaments. Increasing nhinc or nwinc can therefore change the solver model without changing the visible envelope. A coarse plane preview also cannot verify holes or contact placement: enable FineMesh, or inspect the exported file with FHImport.</p>
+  <p>Choose a cross-section discretization sufficient for the highest frequency and the expected skin/proximity effects. Compare extracted quantities after refining the relevant controls. More curve chords do not replace cross-section filaments, and more thickness filaments do not refine the plane's in-plane contact geometry. The external solver can also refine segment lengths during its own run; FHImport displays the input geometry before that automatic refinement.</p>
+
+  <h2 id="export">8. Export and run FastHenry</h2>
+  <ol>
+    <li>Recompute and save the FreeCAD document. Check node connectivity, port polarity, cross-section orientation, plane membership and discretization.</li>
+    <li>Check FHSolver.Units, Sigma, frequency settings and all per-object overrides.</li>
+    <li>Set <strong>Folder</strong> and <strong>Filename</strong>. Prefer an existing writable destination. The exporter can create one missing directory, but does not recursively create parent directories.</li>
+    <li>Click <strong>FHInputFile</strong>. Confirm overwriting if the destination file already exists.</li>
+    <li>Read the Report view and inspect the generated text. The file contains the solver defaults, nodes, segments, path segments, uniform planes, equivalences, ports, frequency request and <code>.end</code>.</li>
+    <li>Use <strong>Import FastHenry file</strong> to inspect the generated file, if desired. That visualization is a separate snapshot; later native edits require another export and reload.</li>
+    <li>Run the input file using your external FastHenry installation, for example <code>fasthenry model.inp</code> where that command is installed, or the solver's own GUI.</li>
+  </ol>
+  <p>FHInputFile exports supported native FH objects across the document, including hidden objects. It does not export arbitrary CAD solids or FHImport visualization compounds. It does not run FastHenry or perform a comprehensive electrical validation. A completion message should be checked against any preceding warnings.</p>
+  <p>FastHenry normally writes frequency-dependent complex impedance matrices to <code>Zc.mat</code> (with any requested output suffix). For nonzero frequency, resistance is the real part of Z and inductance is <code>Im(Z)/(2&pi;f)</code>. Preserve the port order and frequency labels when processing the matrices. The FH toolbar does not currently provide a solved-current-density importer; FHImport reads input geometry, not Zc or current-result files.</p>
+
+  <h2 id="import">9. Import and edit FastHenry input files</h2>
+  <h3>Open the model and its source files</h3>
+  <ol>
+    <li>Choose <strong>EM &rarr; Import FastHenry file</strong>, also available on the FastHenry toolbar.</li>
+    <li>Select the root input file, normally <code>.inp</code>.</li>
+    <li>Enable <strong>Also open all input files for text editing</strong> to open the input and every referenced plane-discretization file in separate syntax-highlighted tabs.</li>
+    <li>Confirm the import. A progress dialog reports reading, plane discretization and surface construction; use <strong>Cancel</strong> to stop. Partially created geometry is removed on cancellation or failure.</li>
+    <li>Inspect the grouped Part geometry in the tree and 3D view. Ordinary segments and individual ground planes are grouped inside an outer Part::Compound.</li>
+  </ol>
+  <p>FastHenry has no recursive input-file hierarchy. A nonuniform plane can reference a separate binary cell-tree file using <code>file=...</code>; these dependencies are opened once each. Paths resolve relative to the input file's directory. <code>file=NONE</code> creates a nonuniform plane using contact-driven discretization and adds no external file.</p>
+
+  <h3>Displayed geometry and supported input</h3>
+  <p>The display follows FastHenry's unrefined PostScript geometry (<code>-f simple</code> with thick ground-plane segments, <code>-g thick</code>): four lateral faces per segment, with end faces omitted. Open-looking ends are therefore expected. All displayed coordinates are converted to physical FreeCAD millimetres using the file's <code>.units</code> statements.</p>
+  <p>The reader handles width-vector orientation, sequential defaults, unit conversion, uniform-plane holes, binary nonuniform discretization files, and the following contacts: <code>initial_grid</code>, <code>initial_mesh_grid</code>, <code>point</code>, <code>line</code>, <code>rect</code>, <code>decay_rect</code>, <code>connection</code>, <code>equiv_rect</code> and <code>trace</code>. Nonuniform segment widths and centre offsets follow the bundled FastHenry source implementation. Electrical constraints remain in the source; they do not add visible conductor geometry.</p>
+  <p>As in the solver, <code>hole</code> statements affect uniform planes; nonuniform mesh holes use <code>initial_mesh_grid</code>. Uniform-plane contacts are ignored by the solver and the reader. Nonuniform equivalence contacts affect electrical connectivity rather than the displayed surfaces. The Report view identifies ignored plane statements and malformed input.</p>
+  <p>FHImport does not run FastHenry, display solved currents, show individual cross-section filaments, or reproduce automatic longitudinal solver refinement. The imported objects are visualization geometry independent of the native FH solver primitives. Editing their FreeCAD properties does not update the source text, and FHInputFile does not convert them back into an input file.</p>
+
+  <h3>Editor controls and reloading</h3>
+  <table>
+    <thead><tr><th>Control</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Save</strong> / Ctrl+S</td><td>Save the current physical source file. This does not rebuild the 3D model.</td></tr>
+      <tr><td><strong>Save All</strong></td><td>Save every open FastHenry source editor.</td></tr>
+      <tr><td><strong>Save &amp; Reload</strong></td><td>Save the root input and its open related files, then replace the associated visualization as one undoable document operation. Newly referenced discretization files are opened after a successful reload.</td></tr>
+      <tr><td><strong>Close All</strong></td><td>Close all FastHenry editors, asking how to handle unsaved changes.</td></tr>
+      <tr><td><strong>View &rarr; Wrap lines</strong></td><td>Toggle line wrapping. The option is also available in the editor context menu and is remembered for subsequently opened editors.</td></tr>
+    </tbody>
+  </table>
+  <p>If reloading fails or is cancelled, the previous model geometry and editor association are restored. <strong>The files have already been saved:</strong> restoring the document does not undo source-file writes. Correct the text and reload again. Closing the model's document prevents its editors from reloading until a new association is established by importing the input again.</p>
+  <p>Native input highlighting distinguishes directives, nodes/references, segments, planes, contact/hole keywords, comments and numbers. Plane-discretization files have their own tree-syntax highlighting.</p>
+  <p>Keep a valid title line at the start of a native input file and terminate its model with <code>.end</code>. Lines beginning with <code>*</code> are comments; a leading <code>+</code> continues the preceding statement. Entity names and keywords are case-insensitive. Refer to <em>FastHenry_User_Guide.pdf</em> and <em>FastHenry_nonuniform_gndplane_manual.pdf</em>, distributed with the solver, for the complete formats; the bundled solver source is the implementation reference for the importer.</p>
+
+  <h2 id="scripting">10. Python examples</h2>
+  <p>Use the FreeCAD Python console with a document open, or create one as below. This example creates one straight conductor and a port between its ends. It does not model a separate physical return conductor.</p>
+  <pre><code>import FreeCAD as App
+from freecad.EM import EM
+
+doc = App.newDocument("FastHenryExample")
+solver = EM.makeFHSolver()
+solver.Units = "mm"
+solver.Sigma = 5.8e4
+solver.fmin = 1e4
+solver.fmax = 1e8
+solver.ndec = 1
+
+start = EM.makeFHNode(X=0, Y=0, Z=0, name="Start")
+end = EM.makeFHNode(X=10, Y=0, Z=0, name="End")
+segment = EM.makeFHSegment(nodeStart=start, nodeEnd=end,
+                           width=1, height=0.1, name="Trace")
+port = EM.makeFHPort(nodePos=start, nodeNeg=end)
+doc.recompute()
+
+# Set an existing destination folder before exporting.
+# solver.Folder = "/path/to/output"
+# solver.Filename = "model.inp"
+# EM.createFHInputFile(doc)
+</code></pre>
+  <p>Set solver properties explicitly after creation when scripting. To add a path use <code>EM.makeFHPath(baseobj)</code>; for a uniform plane use <code>EM.makeFHPlane(baseobj, thickness=0.1, seg1=10, seg2=10)</code> with a Draft Rectangle or Part Box. Recompute and inspect the result before exporting.</p>
+  <p>Import a file and open all its source editors in the GUI:</p>
+  <pre><code>from freecad.EM import EM
+model = EM.importFHInputFile("/path/to/model.inp", viewText=True)
+files = EM.getFHInputFiles("/path/to/model.inp")
+# To open editors separately for an existing import:
+# EM.openFHTextFiles("/path/to/model.inp", model=model)
+</code></pre>
+
+  <h2 id="troubleshooting">11. Troubleshooting checklist</h2>
+  <ul>
+    <li><strong>Wrong physical size or resistance:</strong> check native FHSolver.Units and all Sigma values together. Native dimensions are numeric values in the selected unit; imported file geometry is converted to physical millimetres.</li>
+    <li><strong>Segments look connected but the solver reports disconnection:</strong> inspect shared FHNode references and FHEquiv objects. Coordinate coincidence and surface contact do not short independent nodes.</li>
+    <li><strong>Unexpected bridge in a path:</strong> check whether the Base contains disconnected edges that FHPath joined. Separate independent routes into different path objects.</li>
+    <li><strong>Plane holes are invisible:</strong> enable FineMesh and verify that the holes belong to the plane. A hole can affect only the available discretization nodes; refine seg1/seg2 where necessary.</li>
+    <li><strong>Plane nodes move unexpectedly:</strong> adopted nodes follow the plane Placement and have local Z projected to zero. Recheck the plane's Nodes list and the trace connections.</li>
+    <li><strong>Changing filament counts does not change the display:</strong> segment envelopes do not show the parallel filaments. Inspect the exported nhinc/nwinc settings and check solver convergence.</li>
+    <li><strong>Nonuniform plane unavailable in the native tool:</strong> define it in a FastHenry input file and inspect/edit it through FHImport.</li>
+    <li><strong>Imported segments appear hollow:</strong> the PostScript-style display deliberately omits end faces. It is a surface visualization, not a collection of CAD solids.</li>
+    <li><strong>Missing discretization file:</strong> check its file= reference and path relative to the input directory. file=NONE is a keyword, not a missing filename.</li>
+    <li><strong>Text edits are not visible in 3D:</strong> saving alone does not rebuild the model. Use Save &amp; Reload and inspect the Report view if the old geometry remains.</li>
+    <li><strong>Failed reload restored the model but the file changed:</strong> source files are saved before rebuilding. Document rollback restores geometry, not the previous on-disk text.</li>
+    <li><strong>Hidden or duplicate objects appear in an export:</strong> native FHInputFile exports supported objects throughout the document. Use separate documents for independent native models.</li>
+    <li><strong>No solver results appear after export/import:</strong> run FastHenry separately. FHImport displays input geometry and does not import impedance matrices or current distributions.</li>
+  </ul>
+  <p>Related workflows: <a href="VH_guide.htm">VoxHenry guide</a> and <a href="FC_guide.htm">FasterCap / FastCap guide</a>.</p>
+</body>
+</html>
